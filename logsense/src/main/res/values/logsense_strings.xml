@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="logsense_name">LogSense</string>
+    <string name="logsense_launcher_label">LogSense</string>
+    <string name="logsense_notification_capture">Recording logs — tap to view</string>
+</resources>

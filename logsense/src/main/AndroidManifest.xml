@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application>
+        <activity
+            android:name="com.msabhi.logsense.internal.ui.LogSenseActivity"
+            android:exported="false"
+            android:label="@string/logsense_name"
+            android:launchMode="singleTop"
+            android:theme="@android:style/Theme.Material.NoActionBar" />
+
+        <!-- Launcher entry so the UI is reachable without notification permission.
+             Host apps can remove it with tools:node="remove". -->
+        <activity-alias
+            android:name="com.msabhi.logsense.Launcher"
+            android:exported="true"
+            android:icon="@drawable/logsense_ic_launcher"
+            android:label="@string/logsense_launcher_label"
+            android:targetActivity="com.msabhi.logsense.internal.ui.LogSenseActivity">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.com.msabhi.logsense.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/logsense_file_paths" />
+        </provider>
+    </application>
+
+</manifest>
