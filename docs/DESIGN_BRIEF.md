@@ -146,12 +146,12 @@ W ActivityManager  Slow operation: 132ms so far, now startProcess
 E OkHttp  <-- HTTP FAILED: java.net.SocketTimeoutException: timeout
 ```
 
-Real analytics (Acme), showing two tag styles + long params:
+Example analytics, showing two tag styles + long params:
 
 ```
-D Telemetry   logEvent = screen_view -> {screenName=splash, page=splash}
-I ANALYTICS         GA -> screen_view : Bundle[{language=en, screenName=splash}]
-D Telemetry   logEvent = APP_HOME -> {home_clicks=OfferSectionLoaded, category=Shop}
+D Telemetry   logEvent = screen_view -> {screen=splash, page=splash}
+I ANALYTICS   GA -> screen_view : Bundle[{language=en, screen=splash}]
+D Telemetry   logEvent = home_open -> {home_clicks=OfferSectionLoaded, category=Shop}
 ```
 
 Crash: `RuntimeException: LogSense demo crash` (JVM), plus an ANR.

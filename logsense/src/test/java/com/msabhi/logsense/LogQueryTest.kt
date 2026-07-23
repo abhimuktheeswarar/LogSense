@@ -27,20 +27,20 @@ class LogQueryTest {
     fun `tag term matches by contains`() {
         val p = pred("tag:Analytics")
         assertTrue(p(entry(tag = "ANALYTICS ... ANALYTICS")))
-        assertFalse(p(entry(tag = "Telemetry".replace("Analytics", "Engine"))))
+        assertFalse(p(entry(tag = "Metrics")))
     }
 
     @Test
     fun `negated tag excludes`() {
-        val p = pred("-tag:metro")
-        assertFalse(p(entry(tag = "metro_event")))
-        assertTrue(p(entry(tag = "bus_event")))
+        val p = pred("-tag:worker")
+        assertFalse(p(entry(tag = "worker_pool")))
+        assertTrue(p(entry(tag = "network_pool")))
     }
 
     @Test
     fun `message term`() {
-        val p = pred("message:logEvent")
-        assertTrue(p(entry(message = "logEvent = screen_view")))
+        val p = pred("message:trackEvent")
+        assertTrue(p(entry(message = "trackEvent = screen_view")))
         assertFalse(p(entry(message = "nothing here")))
     }
 
@@ -54,9 +54,9 @@ class LogQueryTest {
     @Test
     fun `bare word matches tag or message`() {
         val p = pred("home")
-        assertTrue(p(entry(tag = "APP_HOME", message = "x")))
+        assertTrue(p(entry(tag = "HomeScreen", message = "x")))
         assertTrue(p(entry(tag = "T", message = "home loaded")))
-        assertFalse(p(entry(tag = "T", message = "bus")))
+        assertFalse(p(entry(tag = "T", message = "login")))
     }
 
     @Test
@@ -69,8 +69,8 @@ class LogQueryTest {
 
     @Test
     fun `quoted value keeps spaces`() {
-        val p = pred("""message:"logEvent = screen_view"""")
-        assertTrue(p(entry(message = "logEvent = screen_view -> {}")))
-        assertFalse(p(entry(message = "logEvent screen_view")))
+        val p = pred("""message:"trackEvent = screen_view"""")
+        assertTrue(p(entry(message = "trackEvent = screen_view -> {}")))
+        assertFalse(p(entry(message = "trackEvent screen_view")))
     }
 }

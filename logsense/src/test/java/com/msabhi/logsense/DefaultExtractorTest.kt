@@ -65,4 +65,36 @@ class DefaultExtractorTest {
         assertEquals("checkout", event.name)
         assertTrue(event.params["items"] is String)
     }
+
+    // --- generic shapes: arrow separator, verb prefix, brace-wrapped k=v, commas inside values ---
+
+    @Test
+    fun `verb prefix and arrow - name is the identifier before the payload`() {
+        val event = DefaultExtractor("Telemetry", "logEvent = purchase -> {sku=pro, region=US}")
+        assertEquals("purchase", event.name) // "logEvent" verb is skipped
+        assertEquals("pro", event.params["sku"])
+        assertEquals("US", event.params["region"])
+    }
+
+    @Test
+    fun `value containing a comma is kept whole`() {
+        val event = DefaultExtractor("Telemetry", "track = search -> {origin=Paris, France, dest=Rome, Italy}")
+        assertEquals("search", event.name)
+        assertEquals("Paris, France", event.params["origin"])
+        assertEquals("Rome, Italy", event.params["dest"])
+    }
+
+    @Test
+    fun `no stray closing brace on the last value`() {
+        val event = DefaultExtractor("Telemetry", "send = view -> {a=1, screen=Home}")
+        assertEquals("view", event.name)
+        assertEquals("Home", event.params["screen"]) // not "Home}"
+    }
+
+    @Test
+    fun `arrow without braces`() {
+        val event = DefaultExtractor("Telemetry", "GA -> screen=Splash, source=deeplink")
+        assertEquals("Splash", event.params["screen"])
+        assertEquals("deeplink", event.params["source"])
+    }
 }
