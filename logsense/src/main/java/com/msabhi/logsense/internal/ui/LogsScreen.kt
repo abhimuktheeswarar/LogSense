@@ -172,7 +172,8 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
 
     val predicate = remember(tab.filter) { LogQuery.compile(tab.filter) }
     val filtered = remember(entries, predicate) { entries.filter(predicate) }
-    val items = remember(filtered) { groupByTag(filtered) }
+    val groups = remember(filtered) { groupRuns(filtered) }
+    val items = remember(groups) { flatten(groups) }
     val tags = remember(entries) { entries.mapTo(sortedSetOf()) { it.tag }.toList() }
 
     var searchOpen by remember { mutableStateOf(false) }
@@ -189,9 +190,14 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val context = LocalContext.current
     val logScroll by core.prefs.logScroll.collectAsState()
 
-    LaunchedEffect(matchPos, matchIndices, items) {
+    LaunchedEffect(matchPos, matchIndices, items, groups, logScroll) {
         val entry = matchIndices.getOrNull(matchPos)?.let { filtered[it] } ?: return@LaunchedEffect
-        val row = items.indexOfFirst { it is LogItem.Line && it.entry.id == entry.id }
+        // Scroll-entry renders one item per group, so target the group; other modes target the line.
+        val row = if (logScroll == LogScroll.ENTRY) {
+            groups.indexOfFirst { g -> g.lines.any { it.entry.id == entry.id } }
+        } else {
+            items.indexOfFirst { it is LogItem.Line && it.entry.id == entry.id }
+        }
         if (row >= 0) listState.scrollToItem(row)
     }
 
@@ -242,7 +248,7 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
         when {
             entries.isEmpty() -> EmptyLogs(core.appName)
             filtered.isEmpty() -> NoMatches(tab.filter, onClear = { update { LogFilter() } })
-            else -> LogList(items, listState, tab.viewMode, logScroll, matcher, autoFollow = !tab.paused)
+            else -> LogList(groups, items, listState, tab.viewMode, logScroll, matcher, autoFollow = !tab.paused)
         }
     }
 }
@@ -259,19 +265,29 @@ private sealed interface LogItem {
     }
 }
 
-/** Collapses runs of same-tag rows so the tag prints once as a colored band header. */
-private fun groupByTag(filtered: List<LogEntry>): List<LogItem> {
-    val out = ArrayList<LogItem>(filtered.size + 8)
-    var prevTag: String? = null
-    for (e in filtered) {
-        if (e.tag != prevTag) {
-            out.add(LogItem.Band(e.tag, e.level, e.pid, e.id))
-            prevTag = e.tag
+/** A same-tag run: the band header plus every consecutive line under it. */
+private data class LogGroup(val band: LogItem.Band, val lines: List<LogItem.Line>) {
+    val key: Any get() = band.key
+}
+
+/** Collapses runs of same-tag rows into groups (band header + its lines). */
+private fun groupRuns(filtered: List<LogEntry>): List<LogGroup> {
+    val out = ArrayList<LogGroup>()
+    var i = 0
+    while (i < filtered.size) {
+        val first = filtered[i]
+        val lines = ArrayList<LogItem.Line>()
+        while (i < filtered.size && filtered[i].tag == first.tag) {
+            lines.add(LogItem.Line(filtered[i])); i++
         }
-        out.add(LogItem.Line(e))
+        out.add(LogGroup(LogItem.Band(first.tag, first.level, first.pid, first.id), lines))
     }
     return out
 }
+
+/** Flattens groups back to a band/line item stream (used by every mode except Scroll-entry). */
+private fun flatten(groups: List<LogGroup>): List<LogItem> =
+    ArrayList<LogItem>().apply { groups.forEach { g -> add(g.band); addAll(g.lines) } }
 
 /** `tag:value` (quoted if it has spaces), appended to the current query. */
 private fun withTag(query: String, tag: String): String {
@@ -561,6 +577,7 @@ private fun EmptyStateInner(icon: androidx.compose.ui.graphics.vector.ImageVecto
 
 @Composable
 private fun LogList(
+    groups: List<LogGroup>,
     items: List<LogItem>,
     listState: LazyListState,
     viewMode: ViewMode,
@@ -569,6 +586,9 @@ private fun LogList(
     autoFollow: Boolean,
 ) {
     val scope = rememberCoroutineScope()
+    // Scroll-entry renders one item per tag group; every other mode renders a flat band/line stream.
+    val entry = scroll == LogScroll.ENTRY
+    val count = if (entry) groups.size else items.size
     val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
     val followTail by remember {
         derivedStateOf {
@@ -577,13 +597,13 @@ private fun LogList(
             last == null || last.index >= info.totalItemsCount - 2
         }
     }
-    LaunchedEffect(items.size, autoFollow) {
-        if (autoFollow && followTail && items.isNotEmpty()) listState.scrollToItem(items.lastIndex)
+    LaunchedEffect(count, autoFollow) {
+        if (autoFollow && followTail && count > 0) listState.scrollToItem(count - 1)
     }
 
     // PAN mode: the whole list pans left/right as one (a single shared horizontal scroll), so a long
-    // line is read by swiping the entire view. The other modes lay out at viewport width and scroll
-    // per-row (LINE/ENTRY) or wrap (WRAP), so the list itself isn't horizontally scrollable.
+    // line is read by swiping the entire view. Other modes lay out at viewport width; ENTRY scrolls
+    // each tag section together, LINE scrolls each row's message, WRAP wraps.
     val hScroll = rememberScrollState()
     val pan = scroll == LogScroll.PAN
     Box(Modifier.fillMaxSize()) {
@@ -591,11 +611,15 @@ private fun LogList(
             state = listState,
             modifier = if (pan) Modifier.fillMaxHeight().horizontalScroll(hScroll) else Modifier.fillMaxSize(),
         ) {
-            items(items, key = { it.key }) { item ->
-                when (item) {
-                    // Header spans the viewport (with a divider) except in PAN, where it pans with the rows.
-                    is LogItem.Band -> TagBand(item, fillWidth = !pan)
-                    is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher)
+            if (entry) {
+                items(groups, key = { it.key }) { group -> LogGroupItem(group, viewMode, matcher) }
+            } else {
+                items(items, key = { it.key }) { item ->
+                    when (item) {
+                        // Header spans the viewport (with a divider) except in PAN, where it pans with the rows.
+                        is LogItem.Band -> TagBand(item, fillWidth = !pan)
+                        is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher)
+                    }
                 }
             }
         }
@@ -603,12 +627,29 @@ private fun LogList(
             modifier = Modifier.align(Alignment.BottomEnd).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (!atTop && items.isNotEmpty()) {
+            if (!atTop && count > 0) {
                 LogFab(LogSenseIcons.ArrowUp, "Scroll to top", primary = false) { scope.launch { listState.scrollToItem(0) } }
             }
-            if (!followTail && items.isNotEmpty()) {
-                LogFab(LogSenseIcons.ArrowDown, "Jump to latest", primary = true) { scope.launch { listState.scrollToItem(items.lastIndex) } }
+            if (!followTail && count > 0) {
+                LogFab(LogSenseIcons.ArrowDown, "Jump to latest", primary = true) { scope.launch { listState.scrollToItem(count - 1) } }
             }
+        }
+    }
+}
+
+/**
+ * A whole tag section for **Scroll entry** mode: a fixed full-width header over the section's lines,
+ * which share one horizontal scroll so swiping any line pans the entire section together (each
+ * section independent of the others).
+ */
+@Composable
+private fun LogGroupItem(group: LogGroup, viewMode: ViewMode, matcher: TextMatcher?) {
+    val hs = rememberScrollState()
+    Column(Modifier.fillMaxWidth()) {
+        TagBand(group.band, fillWidth = true)
+        Column(Modifier.horizontalScroll(hs)) {
+            // PAN-style rows: wrap-content, single un-wrapped line — the section's shared scroll pans them.
+            group.lines.forEach { line -> LogRow(line.entry, viewMode, LogScroll.PAN, matcher) }
         }
     }
 }
@@ -672,15 +713,14 @@ private fun LogRow(entry: LogEntry, viewMode: ViewMode, scroll: LogScroll, match
     val compact = viewMode == ViewMode.COMPACT
     val vPad = if (compact) 1.5.dp else 3.dp
 
-    // WRAP/LINE occupy the viewport (body takes the remaining width); ENTRY/PAN are wrap-content so
-    // the un-wrapped message defines the row's natural width. ENTRY additionally scrolls that row.
+    // WRAP/LINE occupy the viewport (body takes the remaining width). PAN is wrap-content so the
+    // un-wrapped message defines the row's natural width (the list — or the enclosing Scroll-entry
+    // section — provides the horizontal scroll). Scroll-entry rows are rendered in PAN layout.
     val fillWidth = scroll == LogScroll.WRAP || scroll == LogScroll.LINE
-    val rowScroll = if (scroll == LogScroll.ENTRY) Modifier.horizontalScroll(rememberScrollState()) else Modifier
 
     Row(
         modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .background(rowBg)
-            .then(rowScroll)
             .padding(horizontal = 14.dp, vertical = vPad),
         verticalAlignment = Alignment.Top,
     ) {
