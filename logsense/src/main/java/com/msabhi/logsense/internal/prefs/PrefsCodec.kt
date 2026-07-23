@@ -20,8 +20,7 @@ internal object PrefsCodec {
                     .put("name", t.name)
                     .put("minLevel", t.filter.minLevel.name)
                     .put("query", t.filter.query)
-                    .put("viewMode", t.viewMode.name)
-                    .put("softWrap", t.softWrap),
+                    .put("viewMode", t.viewMode.name),
             )
         }
         return arr.toString()
@@ -39,7 +38,6 @@ internal object PrefsCodec {
                     query = o.optString("query", ""),
                 ),
                 viewMode = enumOr(o.optString("viewMode"), ViewMode.STANDARD),
-                softWrap = o.optBoolean("softWrap", false),
             )
         }
     }.getOrDefault(emptyList())

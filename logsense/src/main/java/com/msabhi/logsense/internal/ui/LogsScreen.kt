@@ -63,6 +63,7 @@ import androidx.compose.ui.unit.sp
 import com.msabhi.logsense.internal.LogSenseCore
 import com.msabhi.logsense.internal.logs.LogFilter
 import com.msabhi.logsense.internal.logs.LogQuery
+import com.msabhi.logsense.internal.logs.LogScroll
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.logs.ViewMode
 import com.msabhi.logsense.internal.reader.LogEntry
@@ -185,6 +186,7 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
+    val logScroll by core.prefs.logScroll.collectAsState()
 
     LaunchedEffect(matchPos, matchIndices, items) {
         val entry = matchIndices.getOrNull(matchPos)?.let { filtered[it] } ?: return@LaunchedEffect
@@ -237,7 +239,7 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
         when {
             entries.isEmpty() -> EmptyLogs(core.appName)
             filtered.isEmpty() -> NoMatches(tab.filter, onClear = { update { LogFilter() } })
-            else -> LogList(items, listState, tab.viewMode, tab.softWrap, matcher, autoFollow = !tab.paused)
+            else -> LogList(items, listState, tab.viewMode, logScroll, matcher, autoFollow = !tab.paused)
         }
     }
 }
@@ -392,11 +394,6 @@ private fun LogsOverflowMenu(
                 onClick = { menuOpen = false; onTabChange(tab.copy(paused = !tab.paused)) },
             )
             DropdownMenuItem(
-                text = { Text("Soft wrap") },
-                trailingIcon = { if (tab.softWrap) Icon(LogSenseIcons.Check, contentDescription = null) },
-                onClick = { onTabChange(tab.copy(softWrap = !tab.softWrap)) },
-            )
-            DropdownMenuItem(
                 text = { Text("Compact view") },
                 trailingIcon = { if (tab.viewMode == ViewMode.COMPACT) Icon(LogSenseIcons.Check, contentDescription = null) },
                 onClick = { onTabChange(tab.copy(viewMode = if (tab.viewMode == ViewMode.STANDARD) ViewMode.COMPACT else ViewMode.STANDARD)) },
@@ -547,7 +544,7 @@ private fun LogList(
     items: List<LogItem>,
     listState: LazyListState,
     viewMode: ViewMode,
-    softWrap: Boolean,
+    scroll: LogScroll,
     matcher: TextMatcher?,
     autoFollow: Boolean,
 ) {
@@ -564,18 +561,21 @@ private fun LogList(
         if (autoFollow && followTail && items.isNotEmpty()) listState.scrollToItem(items.lastIndex)
     }
 
-    // Soft-wrap off → the whole list pans left/right as one (a single shared horizontal scroll),
-    // so a long line is read by swiping the entire view, not each row individually.
+    // PAN mode: the whole list pans left/right as one (a single shared horizontal scroll), so a long
+    // line is read by swiping the entire view. The other modes lay out at viewport width and scroll
+    // per-row (LINE/ENTRY) or wrap (WRAP), so the list itself isn't horizontally scrollable.
     val hScroll = rememberScrollState()
+    val pan = scroll == LogScroll.PAN
     Box(Modifier.fillMaxSize()) {
         LazyColumn(
             state = listState,
-            modifier = if (softWrap) Modifier.fillMaxSize() else Modifier.fillMaxHeight().horizontalScroll(hScroll),
+            modifier = if (pan) Modifier.fillMaxHeight().horizontalScroll(hScroll) else Modifier.fillMaxSize(),
         ) {
             items(items, key = { it.key }) { item ->
                 when (item) {
-                    is LogItem.Band -> TagBand(item, softWrap)
-                    is LogItem.Line -> LogRow(item.entry, viewMode, softWrap, matcher)
+                    // Header spans the viewport (with a divider) except in PAN, where it pans with the rows.
+                    is LogItem.Band -> TagBand(item, fillWidth = !pan)
+                    is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher)
                 }
             }
         }
@@ -605,10 +605,10 @@ private fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: 
 }
 
 @Composable
-private fun TagBand(band: LogItem.Band, softWrap: Boolean) {
+private fun TagBand(band: LogItem.Band, fillWidth: Boolean) {
     Row(
-        // Wrap-content under the shared horizontal scroll (no flexible divider) when soft-wrap is off.
-        modifier = (if (softWrap) Modifier.fillMaxWidth() else Modifier)
+        // Wrap-content (no flexible divider) when the header pans with the rows (PAN mode).
+        modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -618,7 +618,7 @@ private fun TagBand(band: LogItem.Band, softWrap: Boolean) {
             color = colorForLevel(band.level),
         )
         Spacer(Modifier.width(8.dp))
-        if (softWrap) {
+        if (fillWidth) {
             Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
             Spacer(Modifier.width(8.dp))
         }
@@ -634,7 +634,7 @@ private fun TagBand(band: LogItem.Band, softWrap: Boolean) {
 private fun colorForLevel(level: LogLevel): Color = level.color()
 
 @Composable
-private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, matcher: TextMatcher?) {
+private fun LogRow(entry: LogEntry, viewMode: ViewMode, scroll: LogScroll, matcher: TextMatcher?) {
     val cs = MaterialTheme.colorScheme
     val levelColor = entry.level.color()
     val isErr = entry.level == LogLevel.ERROR
@@ -652,11 +652,15 @@ private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, match
     val compact = viewMode == ViewMode.COMPACT
     val vPad = if (compact) 1.5.dp else 3.dp
 
+    // WRAP/LINE occupy the viewport (body takes the remaining width); ENTRY/PAN are wrap-content so
+    // the un-wrapped message defines the row's natural width. ENTRY additionally scrolls that row.
+    val fillWidth = scroll == LogScroll.WRAP || scroll == LogScroll.LINE
+    val rowScroll = if (scroll == LogScroll.ENTRY) Modifier.horizontalScroll(rememberScrollState()) else Modifier
+
     Row(
-        // Wrap-content when soft-wrap is off so rows extend past the viewport and the whole list
-        // pans as one; fill-width (wrapping) when on.
-        modifier = (if (softWrap) Modifier.fillMaxWidth() else Modifier)
+        modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .background(rowBg)
+            .then(rowScroll)
             .padding(horizontal = 14.dp, vertical = vPad),
         verticalAlignment = Alignment.Top,
     ) {
@@ -669,38 +673,35 @@ private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, match
             color = levelColor,
         )
         Spacer(Modifier.width(10.dp))
-        Column(if (softWrap) Modifier.weight(1f) else Modifier) {
+        Column(if (fillWidth) Modifier.weight(1f) else Modifier) {
             if (compact) {
-                MessageText(
-                    prefix = entry.timeMs.asShortTime() + "  ",
-                    text = message,
-                    color = msgColor,
-                    softWrap = softWrap,
-                )
+                MessageText(prefix = entry.timeMs.asShortTime() + "  ", text = message, color = msgColor, scroll = scroll)
             } else {
                 Text(
                     text = entry.timeMs.asTime(),
                     style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
                     color = cs.onSurfaceVariant.copy(alpha = 0.85f),
                 )
-                MessageText(prefix = null, text = message, color = msgColor, softWrap = softWrap)
+                MessageText(prefix = null, text = message, color = msgColor, scroll = scroll)
             }
         }
     }
 }
 
 @Composable
-private fun MessageText(prefix: String?, text: AnnotatedString, color: Color, softWrap: Boolean) {
+private fun MessageText(prefix: String?, text: AnnotatedString, color: Color, scroll: LogScroll) {
     val body = if (prefix == null) text else AnnotatedString(prefix) + text
     val style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp)
-    // Soft-wrap off → a single un-wrapped line; panning is handled by the list-wide horizontal scroll.
-    SelectionContainer {
+    val wrap = scroll == LogScroll.WRAP
+    // LINE mode gives each row's message its own horizontal scroll (gutter/timestamp stay put).
+    val lineScroll = if (scroll == LogScroll.LINE) Modifier.horizontalScroll(rememberScrollState()) else Modifier
+    SelectionContainer(lineScroll) {
         Text(
             text = body,
             style = style,
             color = color,
-            softWrap = softWrap,
-            maxLines = if (softWrap) Int.MAX_VALUE else 1,
+            softWrap = wrap,
+            maxLines = if (wrap) Int.MAX_VALUE else 1,
         )
     }
 }

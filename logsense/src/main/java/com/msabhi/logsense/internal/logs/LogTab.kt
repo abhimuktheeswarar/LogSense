@@ -6,6 +6,15 @@ import com.msabhi.logsense.internal.reader.LogLevel
 internal enum class ViewMode { STANDARD, COMPACT }
 
 /**
+ * How long lines scroll horizontally (a global preference set in Settings, applied to every tab):
+ * - [WRAP]  — wrap onto multiple lines, no horizontal scroll.
+ * - [LINE]  — each row's message scrolls horizontally on its own (gutter/timestamp stay put).
+ * - [ENTRY] — each row scrolls horizontally as a whole unit, independent of other rows.
+ * - [PAN]   — the whole list pans left/right together as one.
+ */
+internal enum class LogScroll { WRAP, LINE, ENTRY, PAN }
+
+/**
  * A narrowing filter over the live log stream: a min level plus an Android-Studio-style query
  * string ([LogQuery]) supporting `tag:`, `-tag:`, `message:`, `level:` and bare words. This is
  * the "filter" half of the filter-vs-search split; it applies to incoming lines too.
@@ -21,7 +30,6 @@ internal data class LogTab(
     val name: String,
     val filter: LogFilter = LogFilter(),
     val viewMode: ViewMode = ViewMode.STANDARD,
-    val softWrap: Boolean = false,
     val paused: Boolean = false,
 )
 

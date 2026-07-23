@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.logs.LevelColorOverride
+import com.msabhi.logsense.internal.logs.LogScroll
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.reader.LogLevel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +20,30 @@ internal class LogSensePrefs(context: Context) {
 
     /** Live so the Compose theme recomposes the moment a color is edited in Settings. */
     val levelColors = MutableStateFlow(loadLevelColors())
+
+    /** Global horizontal-scroll mode for the Logs viewer (Settings). Live so tabs re-render at once. */
+    val logScroll = MutableStateFlow(
+        sp.getString(KEY_LOG_SCROLL, null)?.let { runCatching { LogScroll.valueOf(it) }.getOrNull() } ?: LogScroll.ENTRY,
+    )
+
+    /** Whether events/crashes from earlier app runs are retained (default true). */
+    val keepPastEvents = MutableStateFlow(sp.getBoolean(KEY_KEEP_EVENTS, true))
+    val keepPastCrashes = MutableStateFlow(sp.getBoolean(KEY_KEEP_CRASHES, true))
+
+    fun setLogScroll(mode: LogScroll) {
+        logScroll.value = mode
+        sp.edit().putString(KEY_LOG_SCROLL, mode.name).apply()
+    }
+
+    fun setKeepPastEvents(enabled: Boolean) {
+        keepPastEvents.value = enabled
+        sp.edit().putBoolean(KEY_KEEP_EVENTS, enabled).apply()
+    }
+
+    fun setKeepPastCrashes(enabled: Boolean) {
+        keepPastCrashes.value = enabled
+        sp.edit().putBoolean(KEY_KEEP_CRASHES, enabled).apply()
+    }
 
     fun loadTabs(): List<LogTab> =
         sp.getString(KEY_TABS, null)
@@ -57,6 +82,9 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_TABS = "tabs"
         private const val KEY_COLORS = "level_colors"
         private const val KEY_THEME = "theme_mode"
+        private const val KEY_LOG_SCROLL = "log_scroll"
+        private const val KEY_KEEP_EVENTS = "keep_past_events"
+        private const val KEY_KEEP_CRASHES = "keep_past_crashes"
         val DEFAULT_TAB = LogTab(id = 0, name = "All")
     }
 }

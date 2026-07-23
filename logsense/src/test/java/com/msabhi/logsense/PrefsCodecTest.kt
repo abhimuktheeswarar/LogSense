@@ -21,7 +21,6 @@ class PrefsCodecTest {
                 name = "Errors",
                 filter = LogFilter(minLevel = LogLevel.ERROR, query = """tag:"ANALYTICS ... ANALYTICS" metro"""),
                 viewMode = ViewMode.COMPACT,
-                softWrap = true,
             ),
         )
         val decoded = PrefsCodec.decodeTabs(PrefsCodec.encodeTabs(tabs))

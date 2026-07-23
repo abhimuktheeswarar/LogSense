@@ -7,11 +7,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -23,6 +25,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -42,6 +45,7 @@ import com.msabhi.logsense.BuildConfig
 import com.msabhi.logsense.R
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.LogSenseCore
+import com.msabhi.logsense.internal.logs.LogScroll
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,9 +91,77 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),
                 )
+
+                Spacer(Modifier.height(28.dp))
+                Text("Logs", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                val scroll by core.prefs.logScroll.collectAsState()
+                val scrollModes = listOf(
+                    LogScroll.WRAP to "Wrap",
+                    LogScroll.LINE to "Line",
+                    LogScroll.ENTRY to "Entry",
+                    LogScroll.PAN to "Pan",
+                )
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    scrollModes.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = scroll == mode,
+                            onClick = { core.prefs.setLogScroll(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, scrollModes.size),
+                        ) { Text(label) }
+                    }
+                }
+                Text(
+                    "Long lines: Wrap onto multiple lines, scroll each Line or whole Entry on its own, " +
+                        "or Pan the entire view together.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
+
+                Spacer(Modifier.height(28.dp))
+                Text("Storage", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(4.dp))
+                val keepEvents by core.prefs.keepPastEvents.collectAsState()
+                val keepCrashes by core.prefs.keepPastCrashes.collectAsState()
+                SwitchRow(
+                    title = "Keep previous-session events",
+                    subtitle = "Show analytics events from earlier app runs, not just this one.",
+                    checked = keepEvents,
+                    onCheckedChange = { core.setKeepPastEvents(it) },
+                )
+                SwitchRow(
+                    title = "Keep previous-session crashes",
+                    subtitle = "Show crashes from earlier app runs, not just this one.",
+                    checked = keepCrashes,
+                    onCheckedChange = { core.setKeepPastCrashes(it) },
+                )
             }
             AboutFooter()
         }
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onCheckedChange(!checked) }
+            .padding(vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        Spacer(Modifier.width(12.dp))
+        Switch(checked = checked, onCheckedChange = onCheckedChange)
     }
 }
 

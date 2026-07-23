@@ -106,11 +106,12 @@ internal class LogSenseCore private constructor(
             crashDao.trimAge(minTs)
             crashDao.trimCount(config.maxStoredCrashes)
 
-            // Prune everything from sessions older than the newest [maxSessions] runs.
+            // Prune sessions older than the newest [maxSessions] runs. If the user disabled keeping
+            // past-session events/crashes, that type is narrowed to this run only.
             val keep = sessionDao.recentIds(config.maxSessions)
             if (keep.isNotEmpty()) {
-                database.eventDao().deleteNotInSessions(keep)
-                crashDao.deleteNotInSessions(keep)
+                database.eventDao().deleteNotInSessions(if (prefs.keepPastEvents.value) keep else listOf(sessionId))
+                crashDao.deleteNotInSessions(if (prefs.keepPastCrashes.value) keep else listOf(sessionId))
                 sessionDao.deleteNotIn(keep)
             }
 
@@ -161,6 +162,17 @@ internal class LogSenseCore private constructor(
     fun setThemeMode(mode: ThemeMode) {
         themeMode.value = mode
         prefs.saveThemeMode(mode)
+    }
+
+    /** Persists the retention toggles; turning one off purges earlier runs' data right away. */
+    fun setKeepPastEvents(enabled: Boolean) {
+        prefs.setKeepPastEvents(enabled)
+        if (!enabled) scope.launch { database.eventDao().deleteNotInSessions(listOf(sessionId)) }
+    }
+
+    fun setKeepPastCrashes(enabled: Boolean) {
+        prefs.setKeepPastCrashes(enabled)
+        if (!enabled) scope.launch { database.crashDao().deleteNotInSessions(listOf(sessionId)) }
     }
 
     companion object {
