@@ -17,10 +17,14 @@ internal object Notifications {
     private const val CHANNEL_CAPTURE = "logsense_capture"
     private const val CHANNEL_CRASH = "logsense_crash"
     private const val ID_CAPTURE = 0x10905E
-    private const val ID_CRASH_BASE = 0x10906E
+    // Single id: crash alerts replace each other instead of stacking, so LogSense shows at most
+    // one crash notification (plus the ongoing capture one), never a pile that grows per crash.
+    private const val ID_CRASH = 0x10906E
 
     const val ACTION_PAUSE = "com.msabhi.logsense.action.PAUSE"
     const val ACTION_RESUME = "com.msabhi.logsense.action.RESUME"
+    const val ACTION_SHARE_CRASH = "com.msabhi.logsense.action.SHARE_CRASH"
+    const val EXTRA_SHARE_CRASH_ID = "com.msabhi.logsense.extra.SHARE_CRASH_ID"
 
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
@@ -73,8 +77,21 @@ internal object Notifications {
             .setAutoCancel(true)
             .setLocalOnly(true)
             .setContentIntent(launchPendingIntent(context, crashId))
+            .addAction(0, "Share", crashSharePendingIntent(context, crashId))
             .build()
-        notify(context, ID_CRASH_BASE + (crashId % 100).toInt(), notification)
+        notify(context, ID_CRASH, notification)
+    }
+
+    private fun crashSharePendingIntent(context: Context, crashId: Long): PendingIntent {
+        val intent = Intent(context, CaptureActionReceiver::class.java)
+            .setAction(ACTION_SHARE_CRASH)
+            .putExtra(EXTRA_SHARE_CRASH_ID, crashId)
+        return PendingIntent.getBroadcast(
+            context,
+            crashId.toInt(),
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun appName(context: Context): String = runCatching {

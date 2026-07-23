@@ -4,11 +4,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application>
+        <!-- Own taskAffinity (not the host's) so LogSense opens in its own task and never
+             overlays the host's — tapping the host launcher icon always shows the host, not LogSense. -->
         <activity
             android:name="com.msabhi.logsense.internal.ui.LogSenseActivity"
             android:exported="false"
             android:label="@string/logsense_name"
-            android:launchMode="singleTop"
+            android:launchMode="singleTask"
+            android:taskAffinity="${applicationId}.LogSenseTask"
             android:theme="@android:style/Theme.Material.NoActionBar" />
 
         <!-- Launcher entry so the UI is reachable without notification permission.
@@ -18,6 +21,7 @@
             android:exported="true"
             android:icon="@drawable/logsense_ic_launcher"
             android:label="@string/logsense_launcher_label"
+            android:taskAffinity="${applicationId}.LogSenseTask"
             android:targetActivity="com.msabhi.logsense.internal.ui.LogSenseActivity">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -29,15 +33,14 @@
             android:name="com.msabhi.logsense.internal.notify.CaptureActionReceiver"
             android:exported="false" />
 
+        <!-- A uniquely-named FileProvider subclass so it never collides with the host app's own
+             androidx.core.content.FileProvider in the manifest merger (paths come from the class). -->
         <provider
-            android:name="androidx.core.content.FileProvider"
+            android:name="com.msabhi.logsense.internal.LogSenseFileProvider"
             android:authorities="${applicationId}.com.msabhi.logsense.fileprovider"
             android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/logsense_file_paths" />
-        </provider>
+            android:grantUriPermissions="true" />
+
     </application>
 
 </manifest>

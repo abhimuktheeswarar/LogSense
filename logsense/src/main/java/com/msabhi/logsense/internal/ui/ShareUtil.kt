@@ -3,6 +3,7 @@ package com.msabhi.logsense.internal.ui
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
+import com.msabhi.logsense.internal.data.CrashEntity
 import com.msabhi.logsense.internal.reader.LogEntry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,6 +18,26 @@ internal object ShareUtil {
             .putExtra(Intent.EXTRA_TEXT, text)
         context.startActivity(chooser(intent))
     }
+
+    /** Human-readable crash report — shared from both the detail screen and the crash notification. */
+    fun crashToText(crash: CrashEntity): String = buildString {
+        appendLine("${crash.type}: ${crash.exceptionClass ?: ""}")
+        crash.message?.takeIf { it.isNotBlank() }?.let { appendLine(it) }
+        appendLine(crash.timestamp.asDateTime())
+        crash.threadName?.let { appendLine("Thread: $it") }
+        appendLine()
+        appendLine(crash.deviceInfo)
+        appendLine()
+        appendLine(crash.stacktrace)
+        if (crash.logContext.isNotBlank()) {
+            appendLine()
+            appendLine("--- Log context ---")
+            appendLine(crash.logContext)
+        }
+    }
+
+    fun shareCrash(context: Context, crash: CrashEntity) =
+        shareText(context, "Crash report", crashToText(crash))
 
     /** One "time pid-tid L tag: message" line per entry. */
     private fun logsToText(entries: List<LogEntry>): String = buildString {

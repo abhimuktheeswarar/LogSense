@@ -150,7 +150,7 @@ private fun CrashDetailContent(core: LogSenseCore, crash: CrashEntity) {
                 )
                 SessionLine(core, crash.sessionId)
             }
-            IconButton(onClick = { ShareUtil.shareText(context, "Crash report", crash.asShareText()) }) {
+            IconButton(onClick = { ShareUtil.shareCrash(context, crash) }) {
                 Icon(LogSenseIcons.Share, contentDescription = "Share crash")
             }
         }
@@ -220,18 +220,3 @@ private fun MonoBlock(text: String, horizontallyScrollable: Boolean = false) {
     }
 }
 
-private fun CrashEntity.asShareText(): String = buildString {
-    appendLine("${type}: ${exceptionClass ?: ""}")
-    message?.takeIf { it.isNotBlank() }?.let { appendLine(it) }
-    appendLine(timestamp.asDateTime())
-    threadName?.let { appendLine("Thread: $it") }
-    appendLine()
-    appendLine(deviceInfo)
-    appendLine()
-    appendLine(stacktrace)
-    if (logContext.isNotBlank()) {
-        appendLine()
-        appendLine("--- Log context ---")
-        appendLine(logContext)
-    }
-}

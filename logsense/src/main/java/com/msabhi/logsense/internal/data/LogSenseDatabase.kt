@@ -105,8 +105,12 @@ internal interface EventDao {
     @Query("DELETE FROM events WHERE timestamp < :minTs")
     suspend fun trimAge(minTs: Long)
 
-    @Query("DELETE FROM events WHERE id NOT IN (SELECT id FROM events ORDER BY timestamp DESC LIMIT :cap)")
-    suspend fun trimCount(cap: Int)
+    /** Keeps only the newest [cap] events *within* [sessionId] — so a busy run can't evict older sessions. */
+    @Query(
+        "DELETE FROM events WHERE sessionId = :sessionId AND id NOT IN " +
+            "(SELECT id FROM events WHERE sessionId = :sessionId ORDER BY timestamp DESC LIMIT :cap)",
+    )
+    suspend fun trimCountInSession(sessionId: String, cap: Int)
 }
 
 @Dao

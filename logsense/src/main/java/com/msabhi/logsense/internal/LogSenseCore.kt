@@ -64,8 +64,11 @@ internal class LogSenseCore private constructor(
     private var readerJob: Job? = null
 
     private fun start() {
-        // Crash handler first — nothing that runs later may crash uncaptured.
-        CrashHandler(crashStore, config.crashContextLines, buffer).install()
+        // Crash handler first — nothing that runs later may crash uncaptured. Opt-out via config;
+        // it always chains to the previously-installed handler, so the app's reporter still runs.
+        if (config.captureJvmCrashes) {
+            CrashHandler(crashStore, config.crashContextLines, buffer).install()
+        }
         Notifications.createChannels(appContext)
 
         detector = AnalyticsDetector(config, { database.eventDao() }, scope, sessionId)
@@ -80,18 +83,26 @@ internal class LogSenseCore private constructor(
             val crashDao = database.crashDao()
             val fromFiles = crashStore.ingestInto(crashDao)
             val fromExitInfo = ExitInfoCollector.collect(appContext, crashDao, sessionDao, deviceInfo)
-            (fromFiles + fromExitInfo).forEach { crash ->
+            // One crash notification only — the newest, or a summary when several arrived at once.
+            val ingested = (fromFiles + fromExitInfo).sortedByDescending { it.timestamp }
+            val newest = ingested.firstOrNull()
+            if (newest != null) {
                 Notifications.postCrash(
                     appContext,
-                    crashId = crash.id,
-                    title = crash.exceptionClass?.substringAfterLast('.') ?: "${crash.type} detected",
-                    text = crash.message?.takeIf { it.isNotBlank() } ?: "Tap to view details",
+                    crashId = newest.id,
+                    title = if (ingested.size > 1) {
+                        "${ingested.size} crashes captured"
+                    } else {
+                        newest.exceptionClass?.substringAfterLast('.') ?: "${newest.type} detected"
+                    },
+                    text = newest.message?.takeIf { it.isNotBlank() } ?: "Tap to view details",
                 )
             }
 
+            // Age-based cleanup; event count is capped per-session by the detector (so old sessions
+            // survive a busy run), and whole old sessions are pruned by maxSessions below.
             val minTs = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(config.retentionDays.toLong())
             database.eventDao().trimAge(minTs)
-            database.eventDao().trimCount(config.maxStoredEvents)
             crashDao.trimAge(minTs)
             crashDao.trimCount(config.maxStoredCrashes)
 

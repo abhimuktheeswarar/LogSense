@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -563,11 +564,17 @@ private fun LogList(
         if (autoFollow && followTail && items.isNotEmpty()) listState.scrollToItem(items.lastIndex)
     }
 
+    // Soft-wrap off → the whole list pans left/right as one (a single shared horizontal scroll),
+    // so a long line is read by swiping the entire view, not each row individually.
+    val hScroll = rememberScrollState()
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            modifier = if (softWrap) Modifier.fillMaxSize() else Modifier.fillMaxHeight().horizontalScroll(hScroll),
+        ) {
             items(items, key = { it.key }) { item ->
                 when (item) {
-                    is LogItem.Band -> TagBand(item)
+                    is LogItem.Band -> TagBand(item, softWrap)
                     is LogItem.Line -> LogRow(item.entry, viewMode, softWrap, matcher)
                 }
             }
@@ -598,9 +605,11 @@ private fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: 
 }
 
 @Composable
-private fun TagBand(band: LogItem.Band) {
+private fun TagBand(band: LogItem.Band, softWrap: Boolean) {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 3.dp),
+        // Wrap-content under the shared horizontal scroll (no flexible divider) when soft-wrap is off.
+        modifier = (if (softWrap) Modifier.fillMaxWidth() else Modifier)
+            .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -609,8 +618,10 @@ private fun TagBand(band: LogItem.Band) {
             color = colorForLevel(band.level),
         )
         Spacer(Modifier.width(8.dp))
-        Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
-        Spacer(Modifier.width(8.dp))
+        if (softWrap) {
+            Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             text = "pid ${band.pid}",
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
@@ -642,7 +653,11 @@ private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, match
     val vPad = if (compact) 1.5.dp else 3.dp
 
     Row(
-        modifier = Modifier.fillMaxWidth().background(rowBg).padding(horizontal = 14.dp, vertical = vPad),
+        // Wrap-content when soft-wrap is off so rows extend past the viewport and the whole list
+        // pans as one; fill-width (wrapping) when on.
+        modifier = (if (softWrap) Modifier.fillMaxWidth() else Modifier)
+            .background(rowBg)
+            .padding(horizontal = 14.dp, vertical = vPad),
         verticalAlignment = Alignment.Top,
     ) {
         // gutter: stripe + level letter
@@ -654,7 +669,7 @@ private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, match
             color = levelColor,
         )
         Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
+        Column(if (softWrap) Modifier.weight(1f) else Modifier) {
             if (compact) {
                 MessageText(
                     prefix = entry.timeMs.asShortTime() + "  ",
@@ -678,20 +693,14 @@ private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, match
 private fun MessageText(prefix: String?, text: AnnotatedString, color: Color, softWrap: Boolean) {
     val body = if (prefix == null) text else AnnotatedString(prefix) + text
     val style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp)
-    // ponytail: soft-wrap off scrolls each row on its own scroll state; a shared horizontal
-    // scrollbar across the whole list would be nicer but isn't worth the wiring here.
+    // Soft-wrap off → a single un-wrapped line; panning is handled by the list-wide horizontal scroll.
     SelectionContainer {
-        if (softWrap) {
-            Text(text = body, style = style, color = color)
-        } else {
-            Text(
-                text = body,
-                style = style,
-                color = color,
-                maxLines = 1,
-                softWrap = false,
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-            )
-        }
+        Text(
+            text = body,
+            style = style,
+            color = color,
+            softWrap = softWrap,
+            maxLines = if (softWrap) Int.MAX_VALUE else 1,
+        )
     }
 }
