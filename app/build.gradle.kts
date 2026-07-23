@@ -6,13 +6,13 @@ plugins {
 android {
     namespace = "com.msabhi.lsapp"
     compileSdk {
-        version = release(37)
+        version = release(35)
     }
 
     defaultConfig {
         applicationId = "com.msabhi.lsapp"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 

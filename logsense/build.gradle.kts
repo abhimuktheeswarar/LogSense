@@ -12,7 +12,7 @@ android {
     namespace = "com.msabhi.logsense"
     resourcePrefix = "logsense_"
     compileSdk {
-        version = release(37)
+        version = release(35)
     }
 
     defaultConfig {

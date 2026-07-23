@@ -11,7 +11,7 @@ android {
     // namespace differs only so the R classes don't clash.
     namespace = "com.msabhi.logsense.noop"
     compileSdk {
-        version = release(37)
+        version = release(35)
     }
 
     defaultConfig {
