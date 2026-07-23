@@ -11,20 +11,24 @@ launcher icon.
 ## Features
 
 - **Live log viewer** — an on-device Logcat: multiple tabs each with their own filter, per-tab play/pause,
-  standard/compact view, soft-wrap, scroll to top/bottom, tag autocomplete and restart. Filtering (min-level
-  / tag / text) narrows the stream; a separate find bar searches the current view with match-case / whole-word
-  / regex, match count and next/prev. Configurable per-level colors, follow-tail with jump-to-latest, and
-  share/export. Pause/resume capture from the notification. Tabs and colors persist across runs. Reads only the
-  host app's own logs (`logcat --pid`), so **no permissions, no root, no adb** needed.
+  standard/compact view, soft-wrap, scroll to top/bottom, tag autocomplete and restart. An Android-Studio-style
+  filter query (`tag:` / `-tag:` / `msg:` / `level:` / free text) narrows the stream; a separate find bar
+  searches the current view with match-case / whole-word / regex, match count and next/prev. Follow-tail with
+  jump-to-latest, and share the filtered logs as text or a `.txt` file. Pause/resume capture from the
+  notification. Tabs persist across runs. Reads only the host app's own logs (`logcat --pid`), so
+  **no permissions, no root, no adb** needed.
 - **Analytics events** — configure which log tags carry analytics; LogSense parses matching lines into
   structured `name + params` events (built-in support for `name {json}`, `name Bundle[{k=v}]` and
-  `name k=v, k2=v2` formats, or plug in your own extractor). Per-tag tabs, live keyword filter and the same
-  find bar. Events persist across restarts.
+  `name k=v, k2=v2` formats, or plug in your own extractor). Per-tag tabs, live keyword filter, the same find
+  bar, and export one / selected / all events as JSON (text or file).
 - **Crash capture** — an uncaught-exception handler writes the stacktrace, device info and the last ~200
   log lines to disk *before* the process dies, then surfaces a notification on next launch. ANRs and native
   crashes are picked up via `ApplicationExitInfo` (API 30+).
-- **UI** — Jetpack Compose, Material 3, neutral developer theme, light/dark with in-app override,
-  portrait/landscape/two-pane on large screens.
+- **Sessions & deletion** — events and crashes survive process death, grouped by the run (session) that
+  produced them, current run first. Swipe a row to delete with an undo snackbar, long-press to multi-select,
+  delete a whole session, or clear everything. Old sessions are pruned (`maxSessions`, default 10).
+- **UI** — Jetpack Compose, Material 3 with **Material You** dynamic color, follows the system light/dark
+  (overridable in Settings), portrait / landscape / two-pane on large screens.
 - **Zero release footprint** — a `logsense-no-op` twin artifact means release builds ship no tool code.
 
 ## Setup
@@ -32,8 +36,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.2.0")
-    releaseImplementation("com.msabhi:logsense-no-op:0.2.0")
+    debugImplementation("com.msabhi:logsense:0.2.1")
+    releaseImplementation("com.msabhi:logsense-no-op:0.2.1")
 }
 ```
 

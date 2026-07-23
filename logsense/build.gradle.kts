@@ -19,6 +19,7 @@ android {
         minSdk = 26
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "VERSION_NAME", "\"${project.findProperty("VERSION_NAME") ?: "dev"}\"")
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
@@ -26,6 +27,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 

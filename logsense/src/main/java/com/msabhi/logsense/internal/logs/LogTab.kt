@@ -1,25 +1,19 @@
 package com.msabhi.logsense.internal.logs
 
-import com.msabhi.logsense.internal.reader.LogEntry
 import com.msabhi.logsense.internal.reader.LogLevel
 
 /** How a log row is rendered — mirrors Android Studio's Standard / Compact view. */
 internal enum class ViewMode { STANDARD, COMPACT }
 
 /**
- * A narrowing filter over the live log stream (min level + exact tag + free text). Applies to
- * incoming lines too — this is the "filter" half of Android Studio's filter-vs-search split.
+ * A narrowing filter over the live log stream: a min level plus an Android-Studio-style query
+ * string ([LogQuery]) supporting `tag:`, `-tag:`, `message:`, `level:` and bare words. This is
+ * the "filter" half of the filter-vs-search split; it applies to incoming lines too.
  */
 internal data class LogFilter(
     val minLevel: LogLevel = LogLevel.VERBOSE,
-    val tag: String? = null,
-    val text: String = "",
-) {
-    fun matches(entry: LogEntry): Boolean =
-        entry.level.ordinal >= minLevel.ordinal &&
-            (tag == null || entry.tag == tag) &&
-            (text.isEmpty() || entry.message.contains(text, true) || entry.tag.contains(text, true))
-}
+    val query: String = "",
+)
 
 /** One Android-Studio-style logcat tab: its own filter + view preferences. [paused] is runtime-only. */
 internal data class LogTab(

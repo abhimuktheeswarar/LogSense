@@ -19,8 +19,7 @@ internal object PrefsCodec {
                     .put("id", t.id)
                     .put("name", t.name)
                     .put("minLevel", t.filter.minLevel.name)
-                    .put("tag", t.filter.tag ?: JSONObject.NULL)
-                    .put("text", t.filter.text)
+                    .put("query", t.filter.query)
                     .put("viewMode", t.viewMode.name)
                     .put("softWrap", t.softWrap),
             )
@@ -37,8 +36,7 @@ internal object PrefsCodec {
                 name = o.optString("name", "Logs"),
                 filter = LogFilter(
                     minLevel = enumOr(o.optString("minLevel"), LogLevel.VERBOSE),
-                    tag = if (o.isNull("tag")) null else o.optString("tag"),
-                    text = o.optString("text", ""),
+                    query = o.optString("query", ""),
                 ),
                 viewMode = enumOr(o.optString("viewMode"), ViewMode.STANDARD),
                 softWrap = o.optBoolean("softWrap", false),

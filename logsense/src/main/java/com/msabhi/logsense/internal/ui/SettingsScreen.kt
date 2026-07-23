@@ -2,21 +2,17 @@ package com.msabhi.logsense.internal.ui
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -24,37 +20,34 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.msabhi.logsense.BuildConfig
+import com.msabhi.logsense.R
+import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.LogSenseCore
-import com.msabhi.logsense.internal.logs.LevelColorOverride
-import com.msabhi.logsense.internal.reader.LogLevel
-import com.msabhi.logsense.internal.ui.theme.LocalDarkTheme
-import com.msabhi.logsense.internal.ui.theme.defaultLevelColor
-
-private val PALETTE: List<Int> = listOf(
-    0xFF9E9E9E, 0xFF616161, 0xFF64B5F6, 0xFF1565C0, 0xFF81C784, 0xFF2E7D32,
-    0xFFFFB74D, 0xFFB26A00, 0xFFE57373, 0xFFC62828, 0xFFF06292, 0xFFAD1457,
-    0xFFBA68C8, 0xFF26A69A, 0xFFFFFFFF, 0xFF000000,
-).map { it.toInt() }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
     BackHandler(onBack = onBack)
-    val overrides by core.prefs.levelColors.collectAsState()
-    val dark = LocalDarkTheme.current
+    val themeMode by core.themeMode.collectAsState()
 
     Scaffold(
         topBar = {
@@ -65,88 +58,90 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                         Icon(LogSenseIcons.ArrowBack, contentDescription = "Back")
                     }
                 },
-                actions = {
-                    TextButton(onClick = { core.prefs.resetLevelColors() }) { Text("Reset") }
-                },
             )
         },
     ) { padding ->
-        Column(
-            Modifier
-                .padding(padding)
-                .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-        ) {
-            Text("Log level colors", style = MaterialTheme.typography.titleMedium)
-            Text(
-                "Editing the ${if (dark) "dark" else "light"} theme — toggle theme from the top bar to set the other.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(12.dp))
-            LogLevel.entries.forEach { level ->
-                LevelColorRow(level, dark, overrides[level]) { argb ->
-                    val current = overrides[level]
-                    if (dark) {
-                        core.prefs.setLevelColor(level, light = current?.light, dark = argb)
-                    } else {
-                        core.prefs.setLevelColor(level, light = argb, dark = current?.dark)
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            Column(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
+            ) {
+                Text("Theme", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                val modes = listOf(ThemeMode.SYSTEM to "System", ThemeMode.LIGHT to "Light", ThemeMode.DARK to "Dark")
+                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
+                    modes.forEachIndexed { i, (mode, label) ->
+                        SegmentedButton(
+                            selected = themeMode == mode,
+                            onClick = { core.setThemeMode(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(i, modes.size),
+                        ) { Text(label) }
                     }
                 }
+                Text(
+                    "Colors follow your wallpaper (Material You) on Android 12+.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 6.dp),
+                )
             }
+            AboutFooter()
         }
     }
 }
 
 @Composable
-private fun LevelColorRow(level: LogLevel, dark: Boolean, override: LevelColorOverride?, onPick: (Int?) -> Unit) {
-    val currentSlot = if (dark) override?.dark else override?.light
-    val resolved = currentSlot?.let { Color(it) } ?: defaultLevelColor(level, dark)
-
-    Column(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
-                text = level.letter.toString(),
-                color = resolved,
-                fontFamily = FontFamily.Monospace,
-                fontWeight = FontWeight.Bold,
-                style = MaterialTheme.typography.bodyMedium,
-                modifier = Modifier
-                    .background(resolved.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                    .padding(horizontal = 6.dp, vertical = 1.dp),
-            )
-            Spacer(Modifier.size(10.dp))
-            Text(level.name, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Swatch(defaultLevelColor(level, dark), selected = currentSlot == null, isDefault = true) { onPick(null) }
-            PALETTE.forEach { argb ->
-                Swatch(Color(argb), selected = currentSlot == argb, isDefault = false) { onPick(argb) }
-            }
-        }
-    }
-}
-
-@Composable
-private fun Swatch(color: Color, selected: Boolean, isDefault: Boolean, onClick: () -> Unit) {
-    val border = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
-    Box(
+private fun AboutFooter() {
+    val cs = MaterialTheme.colorScheme
+    val context = LocalContext.current
+    Column(
         modifier = Modifier
-            .size(if (isDefault) 34.dp else 30.dp)
-            .clip(CircleShape)
-            .background(color)
-            .border(if (selected) 3.dp else 1.dp, border, CircleShape)
-            .clickable(onClick = onClick),
-        contentAlignment = Alignment.Center,
+            .fillMaxWidth()
+            .padding(top = 32.dp, bottom = 20.dp)
+            // No ripple/visual affordance — tapping anywhere on the block opens the repo.
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+            ) { openUrl(context, REPO_URL) },
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(7.dp),
     ) {
-        if (isDefault) {
-            Text("·", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelSmall)
+        Text(
+            text = stringResource(R.string.logsense_name).uppercase(),
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = 3.sp),
+            color = cs.onSurfaceVariant,
+        )
+        Text(
+            text = BuildConfig.VERSION_NAME,
+            style = MaterialTheme.typography.headlineSmall.copy(fontFamily = FontFamily.Monospace),
+            color = cs.onSurface,
+        )
+        Box(
+            Modifier
+                .padding(top = 2.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(cs.primary.copy(alpha = 0.13f))
+                .padding(horizontal = 11.dp, vertical = 5.dp),
+        ) {
+            Text(
+                text = "APACHE 2.0",
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, letterSpacing = 1.4.sp),
+                color = cs.primary,
+            )
         }
+    }
+}
+
+private const val REPO_URL = "https://github.com/abhimuktheeswarar/LogSense"
+
+private fun openUrl(context: android.content.Context, url: String) {
+    runCatching {
+        context.startActivity(
+            android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+        )
     }
 }

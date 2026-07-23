@@ -23,6 +23,8 @@ public class LogSenseConfig(
     public val maxStoredEvents: Int = 1_000,
     /** Max crash reports kept in storage. */
     public val maxStoredCrashes: Int = 50,
+    /** Max number of recent sessions (process runs) whose events/crashes are kept; older are pruned. */
+    public val maxSessions: Int = 10,
     /** Show the ongoing "capturing" notification (requires notifications enabled by the user). */
     public val showNotification: Boolean = true,
     /** Force light/dark, or follow the system. */

@@ -10,6 +10,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import com.msabhi.logsense.R
 import com.msabhi.logsense.internal.ui.LogSenseActivity
+import com.msabhi.logsense.internal.ui.formatCount
 
 internal object Notifications {
 
@@ -31,16 +32,20 @@ internal object Notifications {
         )
     }
 
-    fun postCapture(context: Context, paused: Boolean) {
-        val textRes =
-            if (paused) R.string.logsense_notification_paused else R.string.logsense_notification_capture
+    fun postCapture(context: Context, paused: Boolean, count: Int = 0) {
+        val base = context.getString(
+            if (paused) R.string.logsense_notification_paused else R.string.logsense_notification_capture,
+        )
+        val body = if (!paused && count > 0) "$base · ${formatCount(count)} lines" else base
         val actionLabel = if (paused) "Resume" else "Pause"
         val notification = NotificationCompat.Builder(context, CHANNEL_CAPTURE)
             .setSmallIcon(R.drawable.logsense_ic_notification)
-            .setContentTitle(context.getString(R.string.logsense_name))
-            .setContentText(context.getString(textRes))
+            .setContentTitle(appName(context))
+            .setContentText(body)
+            .setSubText(context.getString(R.string.logsense_name))
             .setOngoing(true)
             .setSilent(true)
+            .setOnlyAlertOnce(true)
             .setLocalOnly(true)
             .setContentIntent(launchPendingIntent(context, crashId = null))
             .addAction(0, actionLabel, capturePendingIntent(context, resume = paused))
@@ -64,12 +69,17 @@ internal object Notifications {
             .setSmallIcon(R.drawable.logsense_ic_notification)
             .setContentTitle(title)
             .setContentText(text)
+            .setSubText(context.getString(R.string.logsense_name))
             .setAutoCancel(true)
             .setLocalOnly(true)
             .setContentIntent(launchPendingIntent(context, crashId))
             .build()
         notify(context, ID_CRASH_BASE + (crashId % 100).toInt(), notification)
     }
+
+    private fun appName(context: Context): String = runCatching {
+        context.applicationInfo.loadLabel(context.packageManager).toString()
+    }.getOrDefault(context.packageName)
 
     private fun launchPendingIntent(context: Context, crashId: Long?): PendingIntent {
         val intent = Intent(context, LogSenseActivity::class.java)

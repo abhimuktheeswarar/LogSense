@@ -13,6 +13,7 @@ internal class AnalyticsDetector(
     private val config: LogSenseConfig,
     private val eventDao: () -> EventDao,
     private val scope: CoroutineScope,
+    private val sessionId: String,
 ) {
 
     private val extractor = config.analyticsExtractor ?: DefaultExtractor
@@ -24,6 +25,7 @@ internal class AnalyticsDetector(
             val event = runCatching { extractor(entry.tag, entry.message) }.getOrNull() ?: return@mapNotNull null
             EventEntity(
                 timestamp = entry.timeMs,
+                sessionId = sessionId,
                 tag = entry.tag,
                 name = event.name,
                 paramsJson = JSONObject(event.params).toString(),

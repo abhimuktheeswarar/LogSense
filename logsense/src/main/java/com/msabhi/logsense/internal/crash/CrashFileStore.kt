@@ -3,6 +3,7 @@ package com.msabhi.logsense.internal.crash
 import android.util.Log
 import com.msabhi.logsense.internal.data.CrashDao
 import com.msabhi.logsense.internal.data.CrashEntity
+import com.msabhi.logsense.internal.data.EARLIER_SESSION_ID
 import com.msabhi.logsense.internal.reader.LogEntry
 import org.json.JSONObject
 import java.io.File
@@ -11,9 +12,14 @@ import java.io.FileOutputStream
 /**
  * Crash reports are written as fsync'd files at crash time and ingested into Room on the
  * next healthy launch. SQLite in a dying process risks corruption; an atomic tmp-write →
- * fsync → rename never does.
+ * fsync → rename never does. The dying run's [sessionId] is written into the file so the
+ * ingested crash groups under the run that crashed, not the run that ingests it.
  */
-internal class CrashFileStore(filesDir: File, private val deviceInfo: String) {
+internal class CrashFileStore(
+    filesDir: File,
+    private val deviceInfo: String,
+    private val sessionId: String,
+) {
 
     private val dir = File(filesDir, "logsense/crashes")
 
@@ -24,6 +30,7 @@ internal class CrashFileStore(filesDir: File, private val deviceInfo: String) {
             val timestamp = System.currentTimeMillis()
             val json = JSONObject()
                 .put("timestamp", timestamp)
+                .put("sessionId", sessionId)
                 .put("type", "JVM")
                 .put("threadName", thread.name)
                 .put("exceptionClass", throwable.javaClass.name)
@@ -55,6 +62,7 @@ internal class CrashFileStore(filesDir: File, private val deviceInfo: String) {
                 val json = JSONObject(file.readText())
                 CrashEntity(
                     timestamp = json.getLong("timestamp"),
+                    sessionId = json.optString("sessionId", EARLIER_SESSION_ID).ifBlank { EARLIER_SESSION_ID },
                     type = json.getString("type"),
                     threadName = json.optString("threadName"),
                     exceptionClass = json.optString("exceptionClass"),

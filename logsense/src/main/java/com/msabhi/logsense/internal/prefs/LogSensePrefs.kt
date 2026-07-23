@@ -2,6 +2,7 @@ package com.msabhi.logsense.internal.prefs
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.logs.LevelColorOverride
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.reader.LogLevel
@@ -44,9 +45,18 @@ internal class LogSensePrefs(context: Context) {
     private fun loadLevelColors(): Map<LogLevel, LevelColorOverride> =
         sp.getString(KEY_COLORS, null)?.let { PrefsCodec.decodeColors(it) } ?: emptyMap()
 
+    /** The user's chosen theme mode, or null if they've never set one (fall back to config default). */
+    fun loadThemeMode(): ThemeMode? =
+        sp.getString(KEY_THEME, null)?.let { runCatching { ThemeMode.valueOf(it) }.getOrNull() }
+
+    fun saveThemeMode(mode: ThemeMode) {
+        sp.edit().putString(KEY_THEME, mode.name).apply()
+    }
+
     companion object {
         private const val KEY_TABS = "tabs"
         private const val KEY_COLORS = "level_colors"
+        private const val KEY_THEME = "theme_mode"
         val DEFAULT_TAB = LogTab(id = 0, name = "All")
     }
 }

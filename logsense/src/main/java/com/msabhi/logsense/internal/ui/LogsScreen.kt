@@ -1,6 +1,7 @@
 package com.msabhi.logsense.internal.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -10,24 +11,27 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SmallFloatingActionButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -46,12 +50,18 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.msabhi.logsense.internal.LogSenseCore
+import com.msabhi.logsense.internal.logs.LogFilter
+import com.msabhi.logsense.internal.logs.LogQuery
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.logs.ViewMode
 import com.msabhi.logsense.internal.reader.LogEntry
@@ -103,40 +113,48 @@ private fun LogTabStrip(
     onAdd: () -> Unit,
     onClose: (Int) -> Unit,
 ) {
+    val scroll = rememberScrollState()
     Row(
-        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+        modifier = Modifier.fillMaxWidth().horizontalScroll(scroll).padding(horizontal = 12.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         tabs.forEachIndexed { i, tab ->
-            val isSelected = i == selected
+            val on = i == selected
             Row(
                 modifier = Modifier
-                    .padding(horizontal = 2.dp, vertical = 4.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(if (isSelected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
+                    .clip(RoundedCornerShape(50))
+                    .then(
+                        if (on) Modifier.background(MaterialTheme.colorScheme.secondaryContainer)
+                        else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50)),
+                    )
                     .clickable { onSelect(i) }
-                    .padding(start = 12.dp, end = if (isSelected && tabs.size > 1) 2.dp else 12.dp),
+                    .padding(start = 13.dp, end = if (on && tabs.size > 1) 6.dp else 13.dp, top = 7.dp, bottom = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     text = tab.name,
                     style = MaterialTheme.typography.labelLarge,
-                    color = if (isSelected) {
-                        MaterialTheme.colorScheme.onSecondaryContainer
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    color = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (isSelected && tabs.size > 1) {
-                    IconButton(onClick = { onClose(i) }, modifier = Modifier.size(28.dp)) {
-                        Icon(LogSenseIcons.Close, contentDescription = "Close tab", modifier = Modifier.size(16.dp))
-                    }
+                if (on && tabs.size > 1) {
+                    Icon(
+                        LogSenseIcons.Close,
+                        contentDescription = "Close tab",
+                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
+                        modifier = Modifier.padding(start = 5.dp).size(16.dp).clickable { onClose(i) },
+                    )
                 }
             }
         }
-        IconButton(onClick = onAdd) {
-            Icon(LogSenseIcons.Add, contentDescription = "New tab")
-        }
+        // dashed "add" pill
+        Box(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50))
+                .clickable(onClick = onAdd)
+                .padding(7.dp),
+        ) { Icon(LogSenseIcons.Add, contentDescription = "New tab", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp)) }
     }
 }
 
@@ -147,8 +165,11 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     var frozen by remember { mutableStateOf<List<LogEntry>?>(null) }
     LaunchedEffect(tab.paused) { frozen = if (tab.paused) core.buffer.currentSnapshot() else null }
     val entries = frozen ?: liveEntries
+    val bufferedWhilePaused = if (tab.paused) (liveEntries.size - (frozen?.size ?: 0)).coerceAtLeast(0) else 0
 
-    val filtered = remember(entries, tab.filter) { entries.filter { tab.filter.matches(it) } }
+    val predicate = remember(tab.filter) { LogQuery.compile(tab.filter) }
+    val filtered = remember(entries, predicate) { entries.filter(predicate) }
+    val items = remember(filtered) { groupByTag(filtered) }
     val tags = remember(entries) { entries.mapTo(sortedSetOf()) { it.tag }.toList() }
 
     var searchOpen by remember { mutableStateOf(false) }
@@ -164,38 +185,38 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    LaunchedEffect(matchPos, matchIndices) {
-        matchIndices.getOrNull(matchPos)?.let { listState.scrollToItem(it) }
+    LaunchedEffect(matchPos, matchIndices, items) {
+        val entry = matchIndices.getOrNull(matchPos)?.let { filtered[it] } ?: return@LaunchedEffect
+        val row = items.indexOfFirst { it is LogItem.Line && it.entry.id == entry.id }
+        if (row >= 0) listState.scrollToItem(row)
     }
 
+    fun update(transform: LogFilter.() -> LogFilter) = onTabChange(tab.copy(filter = tab.filter.transform()))
+
     Column(Modifier.fillMaxSize()) {
+        // filter row: field + min-level + overflow
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            OutlinedTextField(
-                value = tab.filter.text,
-                onValueChange = { onTabChange(tab.copy(filter = tab.filter.copy(text = it))) },
+            FilterField(
+                value = tab.filter.query,
+                onValueChange = { update { copy(query = it) } },
                 modifier = Modifier.weight(1f),
-                placeholder = { Text("Filter") },
-                trailingIcon = {
-                    if (tab.filter.text.isNotEmpty()) {
-                        IconButton(onClick = { onTabChange(tab.copy(filter = tab.filter.copy(text = ""))) }) {
-                            Icon(LogSenseIcons.Close, contentDescription = "Clear filter")
-                        }
-                    }
-                },
-                singleLine = true,
             )
-            IconButton(onClick = { searchOpen = !searchOpen }) {
-                Icon(LogSenseIcons.Search, contentDescription = "Find")
-            }
-            IconButton(onClick = { core.scope.launch { ShareUtil.shareLogFile(context, filtered) } }) {
-                Icon(LogSenseIcons.Share, contentDescription = "Share logs")
-            }
-            IconButton(onClick = { core.scope.launch { core.buffer.clear() } }) {
-                Icon(LogSenseIcons.Delete, contentDescription = "Clear logs")
-            }
+            MinLevelChip(tab.filter.minLevel) { update { copy(minLevel = it) } }
+            LogsOverflowMenu(
+                tab = tab,
+                tags = tags,
+                onToggleFind = { searchOpen = !searchOpen },
+                onInsertTag = { tagValue -> update { copy(query = withTag(query, tagValue)) } },
+                onTabChange = onTabChange,
+                onRestart = { core.restartReader() },
+                onShareText = { ShareUtil.shareLogText(context, filtered) },
+                onShareFile = { core.scope.launch { ShareUtil.shareLogFile(context, filtered) } },
+                onClear = { core.scope.launch { core.buffer.clear() } },
+            )
         }
 
         if (searchOpen) {
@@ -210,95 +231,327 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
             )
         }
 
+        if (tab.paused) FrozenBanner(bufferedWhilePaused)
+
+        when {
+            entries.isEmpty() -> EmptyLogs(core.appName)
+            filtered.isEmpty() -> NoMatches(tab.filter, onClear = { update { LogFilter() } })
+            else -> LogList(items, listState, tab.viewMode, tab.softWrap, matcher, autoFollow = !tab.paused)
+        }
+    }
+}
+
+/* ---------------- tag grouping ---------------- */
+
+private sealed interface LogItem {
+    val key: Any
+    data class Band(val tag: String, val level: LogLevel, val pid: Int, val firstId: Long) : LogItem {
+        override val key get() = "b$firstId"
+    }
+    data class Line(val entry: LogEntry) : LogItem {
+        override val key get() = entry.id
+    }
+}
+
+/** Collapses runs of same-tag rows so the tag prints once as a colored band header. */
+private fun groupByTag(filtered: List<LogEntry>): List<LogItem> {
+    val out = ArrayList<LogItem>(filtered.size + 8)
+    var prevTag: String? = null
+    for (e in filtered) {
+        if (e.tag != prevTag) {
+            out.add(LogItem.Band(e.tag, e.level, e.pid, e.id))
+            prevTag = e.tag
+        }
+        out.add(LogItem.Line(e))
+    }
+    return out
+}
+
+/** `tag:value` (quoted if it has spaces), appended to the current query. */
+private fun withTag(query: String, tag: String): String {
+    val token = if (tag.any { it.isWhitespace() }) "tag:\"$tag\"" else "tag:$tag"
+    return if (query.isBlank()) token else "${query.trimEnd()} $token"
+}
+
+/* ---------------- controls ---------------- */
+
+@Composable
+private fun FilterField(value: String, onValueChange: (String) -> Unit, modifier: Modifier = Modifier) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier = modifier
+            .height(46.dp)
+            .clip(RoundedCornerShape(12.dp))
+            .background(cs.surfaceContainer)
+            .border(1.dp, cs.outlineVariant, RoundedCornerShape(12.dp))
+            .padding(start = 12.dp, end = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(LogSenseIcons.FilterList, contentDescription = null, tint = cs.onSurfaceVariant, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f)) {
+            if (value.isEmpty()) {
+                Text(
+                    "Filter — tag:foo -tag:bar level:E",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp),
+                    color = cs.onSurfaceVariant.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            BasicTextField(
+                value = value,
+                onValueChange = onValueChange,
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth(),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(
+                    fontFamily = FontFamily.Monospace,
+                    fontSize = 13.sp,
+                    color = cs.onSurface,
+                ),
+                visualTransformation = FilterQueryTransformation(cs.primary, cs.error),
+                cursorBrush = SolidColor(cs.primary),
+            )
+        }
+        if (value.isNotEmpty()) {
+            IconButton(onClick = { onValueChange("") }) {
+                Icon(LogSenseIcons.Close, contentDescription = "Clear filter", tint = cs.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+@Composable
+private fun MinLevelChip(minLevel: LogLevel, onSelect: (LogLevel) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val cs = MaterialTheme.colorScheme
+    Box {
         Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            modifier = Modifier
+                .height(34.dp)
+                .clip(RoundedCornerShape(9.dp))
+                .border(1.dp, cs.outline, RoundedCornerShape(9.dp))
+                .clickable { expanded = true }
+                .padding(start = 12.dp, end = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            LogLevel.entries.forEach { level ->
-                FilterChip(
-                    selected = tab.filter.minLevel == level,
-                    onClick = { onTabChange(tab.copy(filter = tab.filter.copy(minLevel = level))) },
-                    label = { Text(level.letter.toString()) },
-                )
-            }
-            TagFilterChip(tags, tab.filter.tag) { onTabChange(tab.copy(filter = tab.filter.copy(tag = it))) }
-
-            IconButton(onClick = { onTabChange(tab.copy(paused = !tab.paused)) }) {
-                Icon(
-                    if (tab.paused) LogSenseIcons.Play else LogSenseIcons.Pause,
-                    contentDescription = if (tab.paused) "Resume this tab" else "Pause this tab",
-                )
-            }
-            IconButton(onClick = { core.restartReader() }) {
-                Icon(LogSenseIcons.Restart, contentDescription = "Restart logcat")
-            }
-            ToggleIcon(LogSenseIcons.WrapText, "Soft wrap", tab.softWrap) {
-                onTabChange(tab.copy(softWrap = !tab.softWrap))
-            }
-            ToggleIcon(LogSenseIcons.Density, "Compact view", tab.viewMode == ViewMode.COMPACT) {
-                onTabChange(tab.copy(viewMode = if (tab.viewMode == ViewMode.STANDARD) ViewMode.COMPACT else ViewMode.STANDARD))
-            }
-            IconButton(onClick = { scope.launch { listState.scrollToItem(0) } }) {
-                Icon(LogSenseIcons.ArrowUp, contentDescription = "Scroll to top")
-            }
-            IconButton(onClick = { scope.launch { if (filtered.isNotEmpty()) listState.scrollToItem(filtered.lastIndex) } }) {
-                Icon(LogSenseIcons.ArrowDown, contentDescription = "Scroll to bottom")
-            }
-        }
-
-        LogList(filtered, listState, tab.viewMode, tab.softWrap, matcher, autoFollow = !tab.paused)
-    }
-}
-
-@Composable
-private fun ToggleIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, on: Boolean, onClick: () -> Unit) {
-    IconButton(onClick = onClick) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = if (on) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-@Composable
-private fun TagFilterChip(tags: List<String>, selected: String?, onSelect: (String?) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
-    var tagQuery by remember { mutableStateOf("") }
-    Box {
-        FilterChip(
-            selected = selected != null,
-            onClick = { expanded = true; tagQuery = "" },
-            label = { Text(selected ?: "Tag") },
-            trailingIcon = { Icon(LogSenseIcons.ArrowDown, contentDescription = null) },
-        )
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            OutlinedTextField(
-                value = tagQuery,
-                onValueChange = { tagQuery = it },
-                placeholder = { Text("Filter tags") },
-                singleLine = true,
-                modifier = Modifier.padding(horizontal = 8.dp).widthIn(min = 200.dp),
+            Text(
+                "${minLevel.letter}+",
+                style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold),
+                color = cs.onSurface,
             )
-            DropdownMenuItem(text = { Text("All tags") }, onClick = { onSelect(null); expanded = false })
-            tags.filter { it.contains(tagQuery, ignoreCase = true) }.forEach { tag ->
-                DropdownMenuItem(text = { Text(tag) }, onClick = { onSelect(tag); expanded = false })
+            Icon(LogSenseIcons.ArrowDown, contentDescription = null, tint = cs.onSurfaceVariant, modifier = Modifier.size(17.dp))
+        }
+        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+            LogLevel.entries.forEach { level ->
+                DropdownMenuItem(
+                    text = { Text("${level.letter}  ${level.name.lowercase().replaceFirstChar { it.uppercase() }}+") },
+                    onClick = { onSelect(level); expanded = false },
+                )
             }
         }
     }
 }
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+private fun LogsOverflowMenu(
+    tab: LogTab,
+    tags: List<String>,
+    onToggleFind: () -> Unit,
+    onInsertTag: (String) -> Unit,
+    onTabChange: (LogTab) -> Unit,
+    onRestart: () -> Unit,
+    onShareText: () -> Unit,
+    onShareFile: () -> Unit,
+    onClear: () -> Unit,
+) {
+    var menuOpen by remember { mutableStateOf(false) }
+    var tagOpen by remember { mutableStateOf(false) }
+    var tagQuery by remember { mutableStateOf("") }
+
+    Box {
+        IconButton(onClick = { menuOpen = true }) {
+            Icon(LogSenseIcons.MoreVert, contentDescription = "More")
+        }
+        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+            DropdownMenuItem(
+                text = { Text("Find") },
+                leadingIcon = { Icon(LogSenseIcons.Search, contentDescription = null) },
+                onClick = { menuOpen = false; onToggleFind() },
+            )
+            DropdownMenuItem(
+                text = { Text("Filter by tag…") },
+                leadingIcon = { Icon(LogSenseIcons.FilterList, contentDescription = null) },
+                onClick = { menuOpen = false; tagQuery = ""; tagOpen = true },
+            )
+            DropdownMenuItem(
+                text = { Text(if (tab.paused) "Resume this tab" else "Freeze this tab") },
+                leadingIcon = { Icon(if (tab.paused) LogSenseIcons.Play else LogSenseIcons.Pause, contentDescription = null) },
+                onClick = { menuOpen = false; onTabChange(tab.copy(paused = !tab.paused)) },
+            )
+            DropdownMenuItem(
+                text = { Text("Soft wrap") },
+                trailingIcon = { if (tab.softWrap) Icon(LogSenseIcons.Check, contentDescription = null) },
+                onClick = { onTabChange(tab.copy(softWrap = !tab.softWrap)) },
+            )
+            DropdownMenuItem(
+                text = { Text("Compact view") },
+                trailingIcon = { if (tab.viewMode == ViewMode.COMPACT) Icon(LogSenseIcons.Check, contentDescription = null) },
+                onClick = { onTabChange(tab.copy(viewMode = if (tab.viewMode == ViewMode.STANDARD) ViewMode.COMPACT else ViewMode.STANDARD)) },
+            )
+            DropdownMenuItem(
+                text = { Text("Restart logcat") },
+                leadingIcon = { Icon(LogSenseIcons.Restart, contentDescription = null) },
+                onClick = { menuOpen = false; onRestart() },
+            )
+            DropdownMenuItem(
+                text = { Text("Share as text") },
+                leadingIcon = { Icon(LogSenseIcons.Share, contentDescription = null) },
+                onClick = { menuOpen = false; onShareText() },
+            )
+            DropdownMenuItem(
+                text = { Text("Share as .txt file") },
+                leadingIcon = { Icon(LogSenseIcons.Share, contentDescription = null) },
+                onClick = { menuOpen = false; onShareFile() },
+            )
+            DropdownMenuItem(
+                text = { Text("Clear") },
+                leadingIcon = { Icon(LogSenseIcons.Delete, contentDescription = null) },
+                onClick = { menuOpen = false; onClear() },
+            )
+        }
+    }
+
+    // Tag picker as a bottom sheet: a pinned search field over a scrollable tag list. (A LazyColumn
+    // can't live inside a DropdownMenu — the menu measures content by intrinsic width, which a
+    // SubcomposeLayout/lazy list can't provide — so this is a sheet, not a dropdown.)
+    if (tagOpen) {
+        androidx.compose.material3.ModalBottomSheet(onDismissRequest = { tagOpen = false }) {
+            Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+                OutlinedTextField(
+                    value = tagQuery,
+                    onValueChange = { tagQuery = it },
+                    placeholder = { Text("Filter tags") },
+                    leadingIcon = { Icon(LogSenseIcons.Search, contentDescription = null) },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Spacer(Modifier.height(8.dp))
+                val shown = tags.filter { it.contains(tagQuery, ignoreCase = true) }
+                LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
+                    items(shown, key = { it }) { tag ->
+                        Text(
+                            text = tag,
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onInsertTag(tag); tagOpen = false }
+                                .padding(vertical = 14.dp, horizontal = 4.dp),
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/* ---------------- banners & empty states ---------------- */
+
+@Composable
+private fun FrozenBanner(buffered: Int) {
+    val warn = LogLevel.WARN.color()
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 4.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(warn.copy(alpha = 0.14f))
+            .border(1.dp, warn.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(LogSenseIcons.Pause, contentDescription = null, tint = warn, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Frozen — this tab is paused",
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.onSurface,
+        )
+        Spacer(Modifier.weight(1f))
+        if (buffered > 0) {
+            Text("+$buffered buffered", style = MaterialTheme.typography.labelMedium, color = warn, fontWeight = FontWeight.Medium)
+        }
+    }
+}
+
+@Composable
+private fun EmptyLogs(appName: String) {
+    EmptyState(
+        icon = LogSenseIcons.Lines,
+        title = "Waiting for the first line…",
+        body = "Connected to logcat. Interact with $appName to see its logs stream in here, newest at the bottom.",
+    )
+}
+
+@Composable
+private fun NoMatches(filter: LogFilter, onClear: () -> Unit) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        EmptyStateInner(
+            icon = LogSenseIcons.Search,
+            title = "Nothing matches this filter",
+            body = "No captured lines match ${filter.query.ifBlank { "level ${filter.minLevel.letter}+" }}. The stream is still recording.",
+        )
+        Spacer(Modifier.height(14.dp))
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
+                .clickable(onClick = onClear)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) { Text("Clear filter", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
+    }
+}
+
+@Composable
+private fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, body: String) {
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        EmptyStateInner(icon, title, body)
+    }
+}
+
+@Composable
+private fun EmptyStateInner(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, body: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Box(
+            Modifier.size(56.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceContainerHigh),
+            contentAlignment = Alignment.Center,
+        ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp)) }
+        Text(title, style = MaterialTheme.typography.titleSmall, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            body,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.widthIn(max = 260.dp),
+            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+        )
+    }
+}
+
+/* ---------------- list & rows ---------------- */
 
 @Composable
 private fun LogList(
-    filtered: List<LogEntry>,
-    listState: androidx.compose.foundation.lazy.LazyListState,
+    items: List<LogItem>,
+    listState: LazyListState,
     viewMode: ViewMode,
     softWrap: Boolean,
     matcher: TextMatcher?,
     autoFollow: Boolean,
 ) {
     val scope = rememberCoroutineScope()
+    val atTop by remember { derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 } }
     val followTail by remember {
         derivedStateOf {
             val info = listState.layoutInfo
@@ -306,82 +559,139 @@ private fun LogList(
             last == null || last.index >= info.totalItemsCount - 2
         }
     }
-    LaunchedEffect(filtered.size, autoFollow) {
-        if (autoFollow && followTail && filtered.isNotEmpty()) listState.scrollToItem(filtered.lastIndex)
+    LaunchedEffect(items.size, autoFollow) {
+        if (autoFollow && followTail && items.isNotEmpty()) listState.scrollToItem(items.lastIndex)
     }
 
     Box(Modifier.fillMaxSize()) {
         LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
-            items(filtered, key = { it.id }) { entry -> LogRow(entry, viewMode, softWrap, matcher) }
+            items(items, key = { it.key }) { item ->
+                when (item) {
+                    is LogItem.Band -> TagBand(item)
+                    is LogItem.Line -> LogRow(item.entry, viewMode, softWrap, matcher)
+                }
+            }
         }
-        if (!followTail && filtered.isNotEmpty()) {
-            SmallFloatingActionButton(
-                onClick = { scope.launch { listState.scrollToItem(filtered.lastIndex) } },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            ) {
-                Icon(LogSenseIcons.ArrowDown, contentDescription = "Jump to latest")
+        Column(
+            modifier = Modifier.align(Alignment.BottomEnd).padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            if (!atTop && items.isNotEmpty()) {
+                LogFab(LogSenseIcons.ArrowUp, "Scroll to top", primary = false) { scope.launch { listState.scrollToItem(0) } }
+            }
+            if (!followTail && items.isNotEmpty()) {
+                LogFab(LogSenseIcons.ArrowDown, "Jump to latest", primary = true) { scope.launch { listState.scrollToItem(items.lastIndex) } }
             }
         }
     }
 }
+
+@Composable
+private fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, primary: Boolean, onClick: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    val bg = if (primary) cs.primaryContainer else cs.surfaceContainerHighest
+    val fg = if (primary) cs.onPrimaryContainer else cs.onSurfaceVariant
+    Box(
+        Modifier.size(44.dp).clip(RoundedCornerShape(14.dp)).background(bg).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) { Icon(icon, contentDescription = desc, tint = fg) }
+}
+
+@Composable
+private fun TagBand(band: LogItem.Band) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text = band.tag,
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold),
+            color = colorForLevel(band.level),
+        )
+        Spacer(Modifier.width(8.dp))
+        Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = "pid ${band.pid}",
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+        )
+    }
+}
+
+@Composable
+private fun colorForLevel(level: LogLevel): Color = level.color()
 
 @Composable
 private fun LogRow(entry: LogEntry, viewMode: ViewMode, softWrap: Boolean, matcher: TextMatcher?) {
+    val cs = MaterialTheme.colorScheme
     val levelColor = entry.level.color()
-    val messageColor = if (entry.level.ordinal >= LogLevel.ERROR.ordinal) levelColor else MaterialTheme.colorScheme.onSurface
-    val message = highlight(entry.message, matcher, MaterialTheme.colorScheme.primary.copy(alpha = 0.35f))
+    val isErr = entry.level == LogLevel.ERROR
+    val isFatal = entry.level == LogLevel.FATAL
+    val rowBg = when {
+        isFatal -> levelColor.copy(alpha = 0.09f)
+        isErr -> levelColor.copy(alpha = 0.08f)
+        else -> Color.Transparent
+    }
+    val msgColor = when {
+        isErr || isFatal -> levelColor
+        else -> cs.onSurface
+    }
+    val message = highlight(entry.message, matcher, cs.primary.copy(alpha = 0.38f))
+    val compact = viewMode == ViewMode.COMPACT
+    val vPad = if (compact) 1.5.dp else 3.dp
 
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
+    Row(
+        modifier = Modifier.fillMaxWidth().background(rowBg).padding(horizontal = 14.dp, vertical = vPad),
+        verticalAlignment = Alignment.Top,
+    ) {
+        // gutter: stripe + level letter
+        Box(Modifier.size(width = 3.dp, height = 15.dp).clip(RoundedCornerShape(2.dp)).background(levelColor))
+        Spacer(Modifier.width(6.dp))
         Text(
             text = entry.level.letter.toString(),
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.Bold),
             color = levelColor,
-            fontFamily = FontFamily.Monospace,
-            fontWeight = FontWeight.Bold,
-            style = MaterialTheme.typography.bodySmall,
-            modifier = Modifier
-                .background(levelColor.copy(alpha = 0.15f), RoundedCornerShape(4.dp))
-                .padding(horizontal = 5.dp, vertical = 1.dp),
         )
-        Spacer(Modifier.width(6.dp))
-        if (viewMode == ViewMode.COMPACT) {
-            MessageText(message, messageColor, softWrap, Modifier.weight(1f))
-        } else {
-            Column(Modifier.weight(1f)) {
-                Row {
-                    Text(
-                        text = entry.timeMs.asTime(),
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        text = entry.tag,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontFamily = FontFamily.Monospace,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                MessageText(message, messageColor, softWrap, Modifier)
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            if (compact) {
+                MessageText(
+                    prefix = entry.timeMs.asShortTime() + "  ",
+                    text = message,
+                    color = msgColor,
+                    softWrap = softWrap,
+                )
+            } else {
+                Text(
+                    text = entry.timeMs.asTime(),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = cs.onSurfaceVariant.copy(alpha = 0.85f),
+                )
+                MessageText(prefix = null, text = message, color = msgColor, softWrap = softWrap)
             }
         }
     }
 }
 
 @Composable
-private fun MessageText(text: AnnotatedString, color: Color, softWrap: Boolean, modifier: Modifier) {
-    // ponytail: soft-wrap off scrolls each row horizontally on its own (per-row scroll state);
-    // a shared list-wide horizontal scrollbar would be nicer but isn't worth the wiring here.
-    SelectionContainer(modifier) {
-        Text(
-            text = text,
-            style = MaterialTheme.typography.bodySmall,
-            fontFamily = FontFamily.Monospace,
-            color = color,
-            softWrap = softWrap,
-            maxLines = if (softWrap) Int.MAX_VALUE else 1,
-            modifier = if (softWrap) Modifier else Modifier.horizontalScroll(rememberScrollState()),
-        )
+private fun MessageText(prefix: String?, text: AnnotatedString, color: Color, softWrap: Boolean) {
+    val body = if (prefix == null) text else AnnotatedString(prefix) + text
+    val style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 13.sp)
+    // ponytail: soft-wrap off scrolls each row on its own scroll state; a shared horizontal
+    // scrollbar across the whole list would be nicer but isn't worth the wiring here.
+    SelectionContainer {
+        if (softWrap) {
+            Text(text = body, style = style, color = color)
+        } else {
+            Text(
+                text = body,
+                style = style,
+                color = color,
+                maxLines = 1,
+                softWrap = false,
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            )
+        }
     }
 }

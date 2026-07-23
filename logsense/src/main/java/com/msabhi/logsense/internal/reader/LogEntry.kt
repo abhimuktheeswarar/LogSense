@@ -5,6 +5,14 @@ internal enum class LogLevel(val letter: Char) {
 
     companion object {
         fun fromLetter(letter: Char): LogLevel? = entries.firstOrNull { it.letter == letter }
+
+        /** Accepts a letter ("E") or a full name ("error"/"ERROR"), case-insensitive. */
+        fun fromName(name: String): LogLevel? {
+            val t = name.trim()
+            if (t.isEmpty()) return null
+            if (t.length == 1) return fromLetter(t[0].uppercaseChar())
+            return entries.firstOrNull { it.name.equals(t, ignoreCase = true) }
+        }
     }
 }
 

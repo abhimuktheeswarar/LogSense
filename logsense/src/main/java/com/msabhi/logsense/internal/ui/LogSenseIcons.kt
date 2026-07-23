@@ -86,6 +86,27 @@ internal object LogSenseIcons {
         "M3,15h18v-2L3,13v2zM3,19h18v-2L3,17v2zM3,11h18L21,9L3,9v2zM3,5v2h18L21,5L3,5z",
     )
 
+    val MoreVert = icon(
+        "MoreVert",
+        "M12,8c1.1,0 2,-0.9 2,-2s-0.9,-2 -2,-2 -2,0.9 -2,2 0.9,2 2,2zM12,10c-1.1,0 -2,0.9 -2,2s0.9,2 " +
+            "2,2 2,-0.9 2,-2 -0.9,-2 -2,-2zM12,16c-1.1,0 -2,0.9 -2,2s0.9,2 2,2 2,-0.9 2,-2 -0.9,-2 -2,-2z",
+    )
+
+    val FilterList = icon(
+        "FilterList",
+        "M10,18h4v-2h-4v2zM3,6v2h18V6H3zM6,13h12v-2H6v2z",
+    )
+
+    val Lines = icon(
+        "Lines",
+        "M3,5h18v2H3zM3,11h14v2H3zM3,17h9v2H3z",
+    )
+
+    val Check = icon(
+        "Check",
+        "M9,16.17L4.83,12l-1.42,1.41L9,19 21,7l-1.41,-1.41z",
+    )
+
     val Settings = icon(
         "Settings",
         "M19.14,12.94c0.04,-0.3 0.06,-0.61 0.06,-0.94c0,-0.32 -0.02,-0.64 -0.07,-0.94l2.03,-1.58c0.18,-0.14 " +

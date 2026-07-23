@@ -6,6 +6,8 @@ import android.content.Context
 import android.os.Build
 import com.msabhi.logsense.internal.data.CrashDao
 import com.msabhi.logsense.internal.data.CrashEntity
+import com.msabhi.logsense.internal.data.EARLIER_SESSION_ID
+import com.msabhi.logsense.internal.data.SessionDao
 
 /**
  * Records ANRs and native crashes from [ApplicationExitInfo] on launch (API 30+).
@@ -17,7 +19,7 @@ internal object ExitInfoCollector {
     private const val KEY_WATERMARK = "last_exit_ts"
     private const val MAX_TRACE_BYTES = 256 * 1024
 
-    suspend fun collect(context: Context, dao: CrashDao, deviceInfo: String): List<CrashEntity> {
+    suspend fun collect(context: Context, dao: CrashDao, sessionDao: SessionDao, deviceInfo: String): List<CrashEntity> {
         if (Build.VERSION.SDK_INT < 30) return emptyList()
         val am = context.getSystemService(ActivityManager::class.java) ?: return emptyList()
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -41,6 +43,7 @@ internal object ExitInfoCollector {
                 }.getOrNull()
                 val entity = CrashEntity(
                     timestamp = info.timestamp,
+                    sessionId = sessionDao.sessionActiveAt(info.timestamp) ?: EARLIER_SESSION_ID,
                     type = type,
                     threadName = null,
                     exceptionClass = null,

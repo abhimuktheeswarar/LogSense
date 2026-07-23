@@ -19,7 +19,7 @@ class PrefsCodecTest {
             LogTab(
                 id = 1,
                 name = "Errors",
-                filter = LogFilter(minLevel = LogLevel.ERROR, tag = "ANALYTICS ... ANALYTICS", text = "metro"),
+                filter = LogFilter(minLevel = LogLevel.ERROR, query = """tag:"ANALYTICS ... ANALYTICS" metro"""),
                 viewMode = ViewMode.COMPACT,
                 softWrap = true,
             ),
@@ -29,9 +29,9 @@ class PrefsCodecTest {
     }
 
     @Test
-    fun `null tag survives round-trip`() {
-        val tabs = listOf(LogTab(7, "Tab", LogFilter(tag = null)))
-        assertEquals(null, PrefsCodec.decodeTabs(PrefsCodec.encodeTabs(tabs)).single().filter.tag)
+    fun `empty query survives round-trip`() {
+        val tabs = listOf(LogTab(7, "Tab", LogFilter(query = "")))
+        assertEquals("", PrefsCodec.decodeTabs(PrefsCodec.encodeTabs(tabs)).single().filter.query)
     }
 
     @Test

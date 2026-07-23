@@ -1,13 +1,17 @@
 package com.msabhi.logsense.internal.ui.theme
 
+import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.dynamicDarkColorScheme
+import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.logs.LevelColorOverride
 import com.msabhi.logsense.internal.reader.LogLevel
@@ -17,7 +21,11 @@ internal val LocalDarkTheme = staticCompositionLocalOf { false }
 /** Resolved per-level colors for the current theme, provided down the tree for [color]. */
 internal val LocalLevelColors = staticCompositionLocalOf<Map<LogLevel, Color>> { emptyMap() }
 
-/** Neutral developer-tool theme. No dynamic color — LogSense looks identical on every device. */
+/**
+ * Material 3 theme following the system light/dark setting (overridable in Settings). Uses
+ * **Material You** dynamic color from the device wallpaper on Android 12+, and a neutral
+ * fallback scheme below that (or a caller-supplied [accentColor]).
+ */
 @Composable
 internal fun LogSenseTheme(
     themeMode: ThemeMode,
@@ -30,11 +38,15 @@ internal fun LogSenseTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }
-    val accent = accentColor?.let { Color(it) }
-    val scheme = if (dark) {
-        darkColorScheme(primary = accent ?: Color(0xFF90A4AE))
-    } else {
-        lightColorScheme(primary = accent ?: Color(0xFF37474F))
+    val context = LocalContext.current
+    val scheme = when {
+        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+
+        else -> {
+            val accent = accentColor?.let { Color(it) }
+            if (dark) darkColorScheme(primary = accent ?: Color(0xFF90A4AE)) else lightColorScheme(primary = accent ?: Color(0xFF37474F))
+        }
     }
     val levelColors = LogLevel.entries.associateWith { level ->
         resolveLevelColor(level, dark, levelColorOverrides[level])
@@ -55,6 +67,10 @@ private fun resolveLevelColor(level: LogLevel, dark: Boolean, override: LevelCol
     val argb = if (dark) override?.dark else override?.light
     return argb?.let { Color(it) } ?: defaultLevelColor(level, dark)
 }
+
+/** Semantic "capture is live" green — deliberately separate from the Material You accent. */
+@Composable
+internal fun liveColor(): Color = if (LocalDarkTheme.current) Color(0xFF7DDB8F) else Color(0xFF2E7D32)
 
 /** Built-in logcat color coding (light / dark pairs) — used when the user hasn't overridden a level. */
 internal fun defaultLevelColor(level: LogLevel, dark: Boolean): Color = when (level) {
