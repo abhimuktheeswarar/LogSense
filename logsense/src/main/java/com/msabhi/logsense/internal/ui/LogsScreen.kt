@@ -28,6 +28,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -212,6 +213,8 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
             LogsOverflowMenu(
                 tab = tab,
                 tags = tags,
+                scroll = logScroll,
+                onSetScroll = { core.prefs.setLogScroll(it) },
                 onToggleFind = { searchOpen = !searchOpen },
                 onInsertTag = { tagValue -> update { copy(query = withTag(query, tagValue)) } },
                 onTabChange = onTabChange,
@@ -361,6 +364,8 @@ private fun MinLevelChip(minLevel: LogLevel, onSelect: (LogLevel) -> Unit) {
 private fun LogsOverflowMenu(
     tab: LogTab,
     tags: List<String>,
+    scroll: LogScroll,
+    onSetScroll: (LogScroll) -> Unit,
     onToggleFind: () -> Unit,
     onInsertTag: (String) -> Unit,
     onTabChange: (LogTab) -> Unit,
@@ -398,6 +403,21 @@ private fun LogsOverflowMenu(
                 trailingIcon = { if (tab.viewMode == ViewMode.COMPACT) Icon(LogSenseIcons.Check, contentDescription = null) },
                 onClick = { onTabChange(tab.copy(viewMode = if (tab.viewMode == ViewMode.STANDARD) ViewMode.COMPACT else ViewMode.STANDARD)) },
             )
+            HorizontalDivider()
+            // Long-line horizontal scrolling (mutually exclusive; tap to switch, menu stays open).
+            listOf(
+                LogScroll.WRAP to "Wrap lines",
+                LogScroll.LINE to "Scroll line",
+                LogScroll.ENTRY to "Scroll entry",
+                LogScroll.PAN to "Pan view",
+            ).forEach { (mode, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    trailingIcon = { if (scroll == mode) Icon(LogSenseIcons.Check, contentDescription = null) },
+                    onClick = { onSetScroll(mode) },
+                )
+            }
+            HorizontalDivider()
             DropdownMenuItem(
                 text = { Text("Restart logcat") },
                 leadingIcon = { Icon(LogSenseIcons.Restart, contentDescription = null) },
@@ -594,7 +614,7 @@ private fun LogList(
 }
 
 @Composable
-private fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, primary: Boolean, onClick: () -> Unit) {
+internal fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, primary: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     val bg = if (primary) cs.primaryContainer else cs.surfaceContainerHighest
     val fg = if (primary) cs.onPrimaryContainer else cs.onSurfaceVariant

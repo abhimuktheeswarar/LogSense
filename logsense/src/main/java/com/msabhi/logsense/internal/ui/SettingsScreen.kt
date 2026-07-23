@@ -45,7 +45,6 @@ import com.msabhi.logsense.BuildConfig
 import com.msabhi.logsense.R
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.LogSenseCore
-import com.msabhi.logsense.internal.logs.LogScroll
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -87,33 +86,6 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                 }
                 Text(
                     "Colors follow your wallpaper (Material You) on Android 12+.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-
-                Spacer(Modifier.height(28.dp))
-                Text("Logs", style = MaterialTheme.typography.titleMedium)
-                Spacer(Modifier.height(8.dp))
-                val scroll by core.prefs.logScroll.collectAsState()
-                val scrollModes = listOf(
-                    LogScroll.WRAP to "Wrap",
-                    LogScroll.LINE to "Line",
-                    LogScroll.ENTRY to "Entry",
-                    LogScroll.PAN to "Pan",
-                )
-                SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-                    scrollModes.forEachIndexed { i, (mode, label) ->
-                        SegmentedButton(
-                            selected = scroll == mode,
-                            onClick = { core.prefs.setLogScroll(mode) },
-                            shape = SegmentedButtonDefaults.itemShape(i, scrollModes.size),
-                        ) { Text(label) }
-                    }
-                }
-                Text(
-                    "Long lines: Wrap onto multiple lines, scroll each Line or whole Entry on its own, " +
-                        "or Pan the entire view together.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp),

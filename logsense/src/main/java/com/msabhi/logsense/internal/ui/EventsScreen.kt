@@ -40,6 +40,7 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -212,6 +213,7 @@ internal fun EventsScreen(
                 if (filtered.isEmpty()) {
                     EventEmpty()
                 } else {
+                    Box(Modifier.fillMaxSize()) {
                     LazyColumn(state = listState, modifier = Modifier.fillMaxSize()) {
                         items(listItems, key = { it.key }) { item ->
                             when (item) {
@@ -248,6 +250,33 @@ internal fun EventsScreen(
                                 }
                             }
                         }
+                    }
+                    // Fast scroll: jump to the newest (top) / oldest (bottom) of a long event list.
+                    val atTop by remember {
+                        derivedStateOf { listState.firstVisibleItemIndex == 0 && listState.firstVisibleItemScrollOffset == 0 }
+                    }
+                    val atBottom by remember {
+                        derivedStateOf {
+                            val info = listState.layoutInfo
+                            val last = info.visibleItemsInfo.lastOrNull()
+                            last == null || last.index >= info.totalItemsCount - 1
+                        }
+                    }
+                    Column(
+                        Modifier.align(Alignment.BottomEnd).padding(14.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        if (!atTop) {
+                            LogFab(LogSenseIcons.ArrowUp, "Scroll to top", primary = false) {
+                                uiScope.launch { listState.scrollToItem(0) }
+                            }
+                        }
+                        if (!atBottom) {
+                            LogFab(LogSenseIcons.ArrowDown, "Scroll to bottom", primary = false) {
+                                uiScope.launch { listState.scrollToItem(listItems.lastIndex.coerceAtLeast(0)) }
+                            }
+                        }
+                    }
                     }
                 }
             }
