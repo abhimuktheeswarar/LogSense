@@ -1,7 +1,9 @@
 package com.msabhi.logsense.internal.ui
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.msabhi.logsense.internal.data.CrashEntity
 import com.msabhi.logsense.internal.reader.LogEntry
@@ -56,16 +58,7 @@ internal object ShareUtil {
         val dir = File(context.cacheDir, "logsense/share").apply { mkdirs() }
         val file = File(dir, "logsense_logs_${System.currentTimeMillis()}.txt")
         file.writeText(logsToText(entries))
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.com.msabhi.logsense.fileprovider",
-            file,
-        )
-        val intent = Intent(Intent.ACTION_SEND)
-            .setType("text/plain")
-            .putExtra(Intent.EXTRA_STREAM, uri)
-            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        context.startActivity(chooser(intent))
+        sendFile(context, fileUri(context, file), "text/plain")
     }
 
     /** Writes [json] to a .json file and shares it (application/json), for event export. */
@@ -73,15 +66,22 @@ internal object ShareUtil {
         val dir = File(context.cacheDir, "logsense/share").apply { mkdirs() }
         val file = File(dir, "${baseName}_${System.currentTimeMillis()}.json")
         file.writeText(json)
-        val uri = FileProvider.getUriForFile(
-            context,
-            "${context.packageName}.com.msabhi.logsense.fileprovider",
-            file,
-        )
+        sendFile(context, fileUri(context, file), "application/json")
+    }
+
+    private fun fileUri(context: Context, file: File): Uri = FileProvider.getUriForFile(
+        context,
+        "${context.packageName}.com.msabhi.logsense.fileprovider",
+        file,
+    )
+
+    private fun sendFile(context: Context, uri: Uri, mime: String) {
         val intent = Intent(Intent.ACTION_SEND)
-            .setType("application/json")
+            .setType(mime)
             .putExtra(Intent.EXTRA_STREAM, uri)
             .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        // ClipData carries the grant to the sharesheet itself, so it can render a file preview.
+        intent.clipData = ClipData.newRawUri(null, uri)
         context.startActivity(chooser(intent))
     }
 

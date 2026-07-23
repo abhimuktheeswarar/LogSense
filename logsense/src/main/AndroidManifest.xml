@@ -39,7 +39,11 @@
             android:name="com.msabhi.logsense.internal.LogSenseFileProvider"
             android:authorities="${applicationId}.com.msabhi.logsense.fileprovider"
             android:exported="false"
-            android:grantUriPermissions="true" />
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/logsense_file_paths" />
+        </provider>
 
     </application>
 

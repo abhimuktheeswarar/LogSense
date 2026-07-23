@@ -24,6 +24,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Regression guard: most host apps already declare their own androidx FileProvider.
+             Declaring one here keeps the demo honest that LogSense's uniquely-named provider
+             coexists (manifest-merger) and that file sharing still works. Don't remove. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/demo_file_paths" />
+        </provider>
     </application>
 
 </manifest>
