@@ -3,6 +3,9 @@ package com.msabhi.logsense.internal.reader
 import android.os.Process
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import java.io.BufferedReader
 import java.io.IOException
@@ -15,6 +18,7 @@ import java.io.IOException
 internal class LogcatReader(
     private val buffer: LogBuffer,
     private val onBatch: (List<LogEntry>) -> Unit,
+    private val captureEnabled: StateFlow<Boolean> = MutableStateFlow(true),
 ) {
 
     private val parser = LogParser()
@@ -35,6 +39,9 @@ internal class LogcatReader(
             try {
                 val reader = process.inputStream.bufferedReader()
                 while (currentCoroutineContext().isActive) {
+                    // ponytail: while paused the logcat process keeps running and its pipe buffers;
+                    // a very long pause can drop the oldest lines. Fine for a debug tool.
+                    if (!captureEnabled.value) captureEnabled.first { it }
                     val batch = ArrayList<LogEntry>()
                     val eof = drain(reader, batch)
                     if (batch.isNotEmpty()) {

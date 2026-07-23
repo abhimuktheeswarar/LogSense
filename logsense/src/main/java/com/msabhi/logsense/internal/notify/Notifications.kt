@@ -18,6 +18,9 @@ internal object Notifications {
     private const val ID_CAPTURE = 0x10905E
     private const val ID_CRASH_BASE = 0x10906E
 
+    const val ACTION_PAUSE = "com.msabhi.logsense.action.PAUSE"
+    const val ACTION_RESUME = "com.msabhi.logsense.action.RESUME"
+
     fun createChannels(context: Context) {
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
         manager.createNotificationChannel(
@@ -28,17 +31,32 @@ internal object Notifications {
         )
     }
 
-    fun postCapture(context: Context) {
+    fun postCapture(context: Context, paused: Boolean) {
+        val textRes =
+            if (paused) R.string.logsense_notification_paused else R.string.logsense_notification_capture
+        val actionLabel = if (paused) "Resume" else "Pause"
         val notification = NotificationCompat.Builder(context, CHANNEL_CAPTURE)
             .setSmallIcon(R.drawable.logsense_ic_notification)
             .setContentTitle(context.getString(R.string.logsense_name))
-            .setContentText(context.getString(R.string.logsense_notification_capture))
+            .setContentText(context.getString(textRes))
             .setOngoing(true)
             .setSilent(true)
             .setLocalOnly(true)
             .setContentIntent(launchPendingIntent(context, crashId = null))
+            .addAction(0, actionLabel, capturePendingIntent(context, resume = paused))
             .build()
         notify(context, ID_CAPTURE, notification)
+    }
+
+    private fun capturePendingIntent(context: Context, resume: Boolean): PendingIntent {
+        val intent = Intent(context, CaptureActionReceiver::class.java)
+            .setAction(if (resume) ACTION_RESUME else ACTION_PAUSE)
+        return PendingIntent.getBroadcast(
+            context,
+            if (resume) 1 else 2,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     fun postCrash(context: Context, crashId: Long, title: String, text: String) {

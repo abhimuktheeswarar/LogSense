@@ -10,12 +10,16 @@ launcher icon.
 
 ## Features
 
-- **Live log viewer** — level color coding, min-level / tag / text filtering, follow-tail with jump-to-latest,
-  share/export as a text file. Reads only the host app's own logs (`logcat --pid`), so **no permissions,
-  no root, no adb** needed.
+- **Live log viewer** — an on-device Logcat: multiple tabs each with their own filter, per-tab play/pause,
+  standard/compact view, soft-wrap, scroll to top/bottom, tag autocomplete and restart. Filtering (min-level
+  / tag / text) narrows the stream; a separate find bar searches the current view with match-case / whole-word
+  / regex, match count and next/prev. Configurable per-level colors, follow-tail with jump-to-latest, and
+  share/export. Pause/resume capture from the notification. Tabs and colors persist across runs. Reads only the
+  host app's own logs (`logcat --pid`), so **no permissions, no root, no adb** needed.
 - **Analytics events** — configure which log tags carry analytics; LogSense parses matching lines into
   structured `name + params` events (built-in support for `name {json}`, `name Bundle[{k=v}]` and
-  `name k=v, k2=v2` formats, or plug in your own extractor). Events persist across restarts.
+  `name k=v, k2=v2` formats, or plug in your own extractor). Per-tag tabs, live keyword filter and the same
+  find bar. Events persist across restarts.
 - **Crash capture** — an uncaught-exception handler writes the stacktrace, device info and the last ~200
   log lines to disk *before* the process dies, then surfaces a notification on next launch. ANRs and native
   crashes are picked up via `ApplicationExitInfo` (API 30+).
@@ -28,8 +32,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.1.1")
-    releaseImplementation("com.msabhi:logsense-no-op:0.1.1")
+    debugImplementation("com.msabhi:logsense:0.2.0")
+    releaseImplementation("com.msabhi:logsense-no-op:0.2.0")
 }
 ```
 

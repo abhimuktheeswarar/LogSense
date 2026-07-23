@@ -60,9 +60,11 @@ internal fun LogSenseApp(
     onCrashIdConsumed: () -> Unit,
 ) {
     val themeMode by core.themeMode.collectAsState()
-    LogSenseTheme(themeMode, core.config.accentColor) {
+    val levelColors by core.prefs.levelColors.collectAsState()
+    LogSenseTheme(themeMode, core.config.accentColor, levelColorOverrides = levelColors) {
         var tab by rememberSaveable { mutableIntStateOf(0) }
         var detail by rememberSaveable(stateSaver = DetailSaver) { mutableStateOf<Detail?>(null) }
+        var showSettings by rememberSaveable { mutableStateOf(false) }
 
         LaunchedEffect(pendingCrashId) {
             if (pendingCrashId != null) {
@@ -75,10 +77,10 @@ internal fun LogSenseApp(
         BoxWithConstraints {
             val wide = maxWidth >= 840.dp
             val current = detail
-            if (current != null && !wide) {
-                DetailScaffold(core, current, onBack = { detail = null })
-            } else {
-                TabsScaffold(
+            when {
+                showSettings -> SettingsScreen(core) { showSettings = false }
+                current != null && !wide -> DetailScaffold(core, current, onBack = { detail = null })
+                else -> TabsScaffold(
                     core = core,
                     tab = tab,
                     onTab = { tab = it; detail = null },
@@ -87,6 +89,7 @@ internal fun LogSenseApp(
                     onOpenDetail = { detail = it },
                     themeMode = themeMode,
                     onThemeToggle = { core.themeMode.value = themeMode.next() },
+                    onSettings = { showSettings = true },
                 )
             }
         }
@@ -110,6 +113,7 @@ private fun TabsScaffold(
     onOpenDetail: (Detail) -> Unit,
     themeMode: ThemeMode,
     onThemeToggle: () -> Unit,
+    onSettings: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -124,6 +128,9 @@ private fun TabsScaffold(
                                 ThemeMode.DARK -> "Dark"
                             },
                         )
+                    }
+                    IconButton(onClick = onSettings) {
+                        Icon(LogSenseIcons.Settings, contentDescription = "Settings")
                     }
                 },
             )
