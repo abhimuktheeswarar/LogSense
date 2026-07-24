@@ -31,6 +31,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -87,23 +88,33 @@ private fun EventDetailContent(core: LogSenseCore, event: EventEntity) {
             Text("No parameters", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
             Section("Parameters · ${params.size}")
-            params.entries.sortedBy { it.key }.forEach { (key, value) ->
-                Row(Modifier.fillMaxWidth().padding(vertical = 9.dp)) {
-                    Text(
-                        text = key,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.weight(0.4f),
-                    )
-                    SelectionContainer(Modifier.weight(0.6f)) {
-                        Text(
-                            text = value?.toString() ?: "null",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+            // One SelectionContainer around the whole table. Putting it on the value (a weighted row
+            // child) makes a long value measure unbounded and collapse the key to one char per line;
+            // weighting a plain Text directly wraps it correctly inside its column.
+            SelectionContainer {
+                Column {
+                    params.entries.sortedBy { it.key }.forEach { (key, value) ->
+                        Row(
+                            Modifier.fillMaxWidth().padding(vertical = 9.dp),
+                            verticalAlignment = Alignment.Top,
+                        ) {
+                            Text(
+                                text = key,
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(0.4f).padding(end = 12.dp),
+                            )
+                            Text(
+                                text = value?.toString() ?: "null",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                textAlign = TextAlign.End,
+                                modifier = Modifier.weight(0.6f),
+                            )
+                        }
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     }
                 }
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
             Section("Raw")
             val raw = remember(event.paramsJson) {
