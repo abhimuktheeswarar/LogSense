@@ -8,6 +8,7 @@ import com.msabhi.logsense.internal.logs.LogScroll
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.reader.LogLevel
 import kotlinx.coroutines.flow.MutableStateFlow
+import org.json.JSONObject
 
 /**
  * Disk-backed UI preferences (SharedPreferences, no extra dependency): the user's logcat tabs and
@@ -31,21 +32,17 @@ internal class LogSensePrefs(context: Context) {
     val keepPastEvents = MutableStateFlow(sp.getBoolean(KEY_KEEP_EVENTS, false))
     val keepPastCrashes = MutableStateFlow(sp.getBoolean(KEY_KEEP_CRASHES, true))
 
-    /** Extra logcat tags (Settings, one per line) to treat as analytics events, merged with config. */
-    val eventTags = MutableStateFlow(sp.getString(KEY_EVENT_TAGS, "").orEmpty())
+    /** QA-added analytics tags (Settings), each with an optional regex (null = built-in parser).
+     *  Merged with config's tags, which are authoritative and can't be edited here. */
+    val tagPatterns = MutableStateFlow(loadTagPatterns())
 
-    fun setEventTags(tags: String) {
-        eventTags.value = tags
-        sp.edit().putString(KEY_EVENT_TAGS, tags).apply()
+    fun setTagPatterns(map: Map<String, String?>) {
+        tagPatterns.value = map
+        sp.edit().putString(KEY_TAG_PATTERNS, encodeTagPatterns(map)).apply()
     }
 
-    /** Optional user-defined regex (Settings) for parsing events; empty = use the built-in parser. */
-    val eventPattern = MutableStateFlow(sp.getString(KEY_EVENT_PATTERN, "").orEmpty())
-
-    fun setEventPattern(pattern: String) {
-        eventPattern.value = pattern
-        sp.edit().putString(KEY_EVENT_PATTERN, pattern).apply()
-    }
+    private fun loadTagPatterns(): Map<String, String?> =
+        sp.getString(KEY_TAG_PATTERNS, null)?.let { decodeTagPatterns(it) } ?: emptyMap()
 
     fun setLogScroll(mode: LogScroll) {
         logScroll.value = mode
@@ -102,8 +99,17 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_LOG_SCROLL = "log_scroll"
         private const val KEY_KEEP_EVENTS = "keep_past_events"
         private const val KEY_KEEP_CRASHES = "keep_past_crashes"
-        private const val KEY_EVENT_TAGS = "event_tags"
-        private const val KEY_EVENT_PATTERN = "event_pattern"
+        private const val KEY_TAG_PATTERNS = "tag_patterns"
         val DEFAULT_TAB = LogTab(id = 0, name = "All")
     }
 }
+
+/** `{tag: regex|null}` — regex null when a tag uses the built-in parser. */
+private fun encodeTagPatterns(map: Map<String, String?>): String =
+    JSONObject().apply { for ((tag, pattern) in map) put(tag, pattern ?: JSONObject.NULL) }.toString()
+
+private fun decodeTagPatterns(text: String): Map<String, String?> =
+    runCatching {
+        val json = JSONObject(text)
+        buildMap { for (tag in json.keys()) put(tag, if (json.isNull(tag)) null else json.getString(tag)) }
+    }.getOrDefault(emptyMap())

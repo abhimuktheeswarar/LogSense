@@ -104,10 +104,9 @@ internal fun EventsScreen(
     var showDeleteAll by remember { mutableStateOf(false) }
     val selectionMode = checked.isNotEmpty()
 
-    val userTags by core.prefs.eventTags.collectAsState()
-    val tags = remember(events, userTags) {
-        val extra = userTags.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }
-        (core.config.analyticsTags + extra + events.map { it.tag }).toSortedSet().toList()
+    val settingsTags by core.prefs.tagPatterns.collectAsState()
+    val tags = remember(events, settingsTags) {
+        (core.config.analyticsTagPatterns.keys + settingsTags.keys + events.map { it.tag }).toSortedSet().toList()
     }
 
     val filtered = remember(events, selectedTag, filterText, pending.toList()) {
@@ -347,7 +346,7 @@ private fun EventEmpty() {
             ) { Icon(LogSenseIcons.Lines, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(28.dp)) }
             Text("No analytics events yet", style = MaterialTheme.typography.titleSmall)
             Text(
-                "Configure analyticsTags in LogSenseConfig and fire an event.",
+                "Configure analyticsTagPatterns in LogSenseConfig and fire an event.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.width(260.dp),

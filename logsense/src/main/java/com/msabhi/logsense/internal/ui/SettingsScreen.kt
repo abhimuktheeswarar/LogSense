@@ -8,9 +8,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -43,10 +41,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -139,9 +135,6 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                 Text("Events", style = MaterialTheme.typography.titleMedium)
                 CaptureTagsEditor(core)
 
-                Spacer(Modifier.height(22.dp))
-                EventPatternEditor(core)
-
                 // ---------- Theme ----------
                 Spacer(Modifier.height(24.dp))
                 Text("Theme", style = MaterialTheme.typography.titleMedium)
@@ -201,209 +194,153 @@ private fun SettingIconRow(
     }
 }
 
-/** Capture-tag chips: code-set tags are locked; user tags are removable; the dashed chip adds one. */
-@OptIn(ExperimentalLayoutApi::class)
+/**
+ * Capture-tag rows: each tag carries an optional regex (blank = built-in parser). Tags set in code
+ * are locked; QA can add new tags (with their own optional regex) and edit/remove those.
+ */
 @Composable
 private fun CaptureTagsEditor(core: LogSenseCore) {
     val cs = MaterialTheme.colorScheme
-    val configTags = remember { core.config.analyticsTags.toList() }
-    val userTags = remember {
-        mutableStateListOf<String>().apply {
-            addAll(core.prefs.eventTags.value.lines().map { it.trim() }.filter { it.isNotEmpty() })
-        }
-    }
-    var showAdd by remember { mutableStateOf(false) }
-    fun persist() = core.prefs.setEventTags(userTags.joinToString("\n"))
+    val configEntries = remember { core.config.analyticsTagPatterns.toList().sortedBy { it.first } }
+    val settings by core.prefs.tagPatterns.collectAsState()
+    val settingsEntries = remember(settings) { settings.toList().sortedBy { it.first } }
+    var dialog by remember { mutableStateOf<TagPatternDraft?>(null) }
+    var pendingRemove by remember { mutableStateOf<String?>(null) }
 
     Spacer(Modifier.height(12.dp))
     Row(verticalAlignment = Alignment.Bottom) {
         Text("Capture tags", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.weight(1f))
         Text(
-            "${configTags.size + userTags.size} tags",
+            "${configEntries.size + settingsEntries.size} tags",
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = cs.onSurfaceVariant,
         )
     }
     Spacer(Modifier.height(10.dp))
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
-    ) {
-        configTags.forEach { tag -> LockedTagChip(tag) }
-        userTags.forEach { tag -> key(tag) { TagChip(tag) { userTags.remove(tag); persist() } } }
-        AddTagChip { showAdd = true }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        configEntries.forEach { (tag, pattern) -> TagPatternRow(tag, pattern, locked = true) }
+        settingsEntries.forEach { (tag, pattern) ->
+            key(tag) {
+                TagPatternRow(
+                    tag = tag,
+                    pattern = pattern,
+                    locked = false,
+                    onEdit = { dialog = TagPatternDraft(tag, pattern.orEmpty(), isNew = false) },
+                    onRemove = { pendingRemove = tag },
+                )
+            }
+        }
+        AddTagRow { dialog = TagPatternDraft("", "", isNew = true) }
     }
     Spacer(Modifier.height(12.dp))
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Icon(LogSenseIcons.Lock, contentDescription = null, tint = cs.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(13.dp))
+    Row(verticalAlignment = Alignment.Top) {
+        Icon(LogSenseIcons.Lock, contentDescription = null, tint = cs.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(13.dp).padding(top = 2.dp))
         Spacer(Modifier.width(6.dp))
         Text(
-            "Tags set in code can't be edited here. All are captured as analytics events.",
+            "Tags set in code are locked. Each tag's optional regex — named groups (?<name>…) and " +
+                "(?<params>…) — extracts the event; without one the built-in parser is used.",
             style = MaterialTheme.typography.bodySmall,
             color = cs.onSurfaceVariant,
         )
     }
 
-    if (showAdd) {
-        AddTagDialog(
-            existing = configTags + userTags,
-            onDismiss = { showAdd = false },
-            onAdd = { userTags.add(it); persist() },
-        )
-    }
-}
-
-@Composable
-private fun EventPatternEditor(core: LogSenseCore) {
-    val cs = MaterialTheme.colorScheme
-    val saved by core.prefs.eventPattern.collectAsState()
-    var editing by rememberSaveable { mutableStateOf(false) }
-    var draft by rememberSaveable { mutableStateOf(saved) }
-    // Validate each non-empty line: must compile, and must declare the (?<name>…) group the
-    // extractor needs — otherwise it's a valid regex that silently captures nothing ("random text").
-    val error = remember(draft) {
-        draft.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }
-            .firstNotNullOfOrNull { line ->
-                when {
-                    runCatching { Regex(line) }.isFailure -> "Not a valid regular expression."
-                    !line.contains("(?<name>") -> "Each pattern needs a (?<name>…) group to name the event."
-                    else -> null
-                }
-            }
-    }
-    val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
-
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("Custom event pattern", style = MaterialTheme.typography.titleSmall)
-        Spacer(Modifier.weight(1f))
-        if (editing) {
-            Text(
-                "optional",
-                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-                color = cs.onSurfaceVariant,
-            )
-        } else {
-            TextButton(
-                onClick = { draft = saved; editing = true },
-                contentPadding = PaddingValues(horizontal = 10.dp),
-            ) {
-                Icon(LogSenseIcons.Edit, contentDescription = null, modifier = Modifier.size(15.dp))
-                Spacer(Modifier.width(5.dp))
-                Text("Edit")
-            }
-        }
-    }
-    Spacer(Modifier.height(8.dp))
-
-    if (editing) {
-        OutlinedTextField(
-            value = draft,
-            onValueChange = { draft = it },
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 2,
-            label = { Text("Regex") },
-            placeholder = { Text("(?<name>\\w+)\\s*->\\s*\\{(?<params>.*)\\}", style = mono) },
-            textStyle = mono,
-            isError = error != null,
-            supportingText = if (error != null) {
-                { Text(error) }
-            } else {
-                null
+    dialog?.let { draft ->
+        val existing = (configEntries.map { it.first } + settingsEntries.map { it.first })
+            .let { if (draft.isNew) it else it - draft.tag }
+        TagPatternDialog(
+            draft = draft,
+            existing = existing,
+            onDismiss = { dialog = null },
+            onSave = { tag, regex ->
+                core.prefs.setTagPatterns(settings + (tag to regex.ifBlank { null }))
+                dialog = null
             },
         )
-        Spacer(Modifier.height(8.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            TextButton(
-                onClick = { draft = "" },
-                enabled = draft.isNotEmpty(),
-                colors = ButtonDefaults.textButtonColors(contentColor = LogLevel.ERROR.color()),
-            ) {
-                Icon(LogSenseIcons.Close, contentDescription = null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Clear")
-            }
-            Spacer(Modifier.weight(1f))
-            TextButton(onClick = { draft = saved; editing = false }) { Text("Cancel") }
-            Spacer(Modifier.width(4.dp))
-            Button(
-                onClick = { core.prefs.setEventPattern(draft.trim()); editing = false },
-                enabled = error == null && draft.trim() != saved, // only when there's an actual change to save
-            ) {
-                Icon(LogSenseIcons.Save, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Save")
-            }
-        }
-    } else {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(8.dp))
-                .border(1.dp, cs.outlineVariant, RoundedCornerShape(8.dp))
-                .padding(14.dp),
-        ) {
+    }
+
+    pendingRemove?.let { tag ->
+        AlertDialog(
+            onDismissRequest = { pendingRemove = null },
+            title = { Text("Remove \"$tag\"?") },
+            text = { Text("Stop capturing this tag as analytics events. Events already captured are kept.") },
+            confirmButton = {
+                TextButton(
+                    onClick = { core.prefs.setTagPatterns(settings - tag); pendingRemove = null },
+                    colors = ButtonDefaults.textButtonColors(contentColor = LogLevel.ERROR.color()),
+                ) { Text("Remove") }
+            },
+            dismissButton = { TextButton(onClick = { pendingRemove = null }) { Text("Cancel") } },
+        )
+    }
+}
+
+private data class TagPatternDraft(val tag: String, val pattern: String, val isNew: Boolean)
+
+/** Non-null error for a tag's regex, or null if it's empty (optional) or valid. */
+private fun patternError(regex: String): String? {
+    val line = regex.trim()
+    if (line.isEmpty()) return null
+    return when {
+        runCatching { Regex(line) }.isFailure -> "Not a valid regular expression."
+        !line.contains("(?<name>") -> "Pattern needs a (?<name>…) group to name the event."
+        else -> null
+    }
+}
+
+/** One capture tag: name + a "regex"/"built-in parser" badge. Locked (config) rows show a lock;
+ *  editable (Settings) rows are tappable to edit and carry a remove button. */
+@Composable
+private fun TagPatternRow(
+    tag: String,
+    pattern: String?,
+    locked: Boolean,
+    onEdit: () -> Unit = {},
+    onRemove: () -> Unit = {},
+) {
+    val cs = MaterialTheme.colorScheme
+    val hasRegex = !pattern.isNullOrBlank()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 46.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .then(if (locked) Modifier.background(cs.onSurface.copy(alpha = 0.05f)) else Modifier.background(cs.surfaceContainer))
+            .then(if (locked) Modifier.dashedBorder(cs.outline, 10.dp) else Modifier.border(1.dp, cs.outlineVariant, RoundedCornerShape(10.dp)))
+            .then(if (locked) Modifier else Modifier.clickable(onClick = onEdit))
+            .padding(start = 14.dp, end = if (locked) 14.dp else 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(vertical = 8.dp)) {
             Text(
-                if (saved.isBlank()) "No pattern — using the built-in parser." else saved,
-                style = mono,
-                color = if (saved.isBlank()) cs.onSurfaceVariant else cs.onSurface,
+                tag,
+                style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace),
+                color = if (locked) cs.onSurfaceVariant else cs.onSurface,
+            )
+            Text(
+                if (hasRegex) "regex" else "built-in parser",
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = if (hasRegex) cs.primary else cs.onSurfaceVariant,
             )
         }
-    }
-    Text(
-        "One regex per line, tried in order. Named groups (?<name>…) and (?<params>…) pull the event " +
-            "name and its params. Empty uses the built-in parser.",
-        style = MaterialTheme.typography.bodySmall,
-        color = cs.onSurfaceVariant,
-        modifier = Modifier.padding(top = 4.dp),
-    )
-}
-
-@Composable
-private fun TagChip(tag: String, onRemove: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier
-            .height(38.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(cs.surfaceContainer)
-            .border(1.dp, cs.outlineVariant, RoundedCornerShape(10.dp))
-            .padding(start = 14.dp, end = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(tag, style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace), color = cs.onSurface)
-        Spacer(Modifier.width(6.dp))
-        Box(
-            Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onRemove).padding(3.dp),
-            contentAlignment = Alignment.Center,
-        ) { Icon(LogSenseIcons.Close, contentDescription = "Remove tag", tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp)) }
+        if (locked) {
+            Icon(LogSenseIcons.Lock, contentDescription = "Set in code", tint = cs.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(15.dp))
+        } else {
+            Box(
+                Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onRemove).padding(6.dp),
+                contentAlignment = Alignment.Center,
+            ) { Icon(LogSenseIcons.Close, contentDescription = "Remove tag", tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp)) }
+        }
     }
 }
 
 @Composable
-private fun LockedTagChip(tag: String) {
+private fun AddTagRow(onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
     Row(
         Modifier
-            .height(38.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(cs.onSurface.copy(alpha = 0.05f))
-            .dashedBorder(cs.outline, 10.dp)
-            .padding(horizontal = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(tag, style = MaterialTheme.typography.labelLarge.copy(fontFamily = FontFamily.Monospace), color = cs.onSurfaceVariant)
-        Spacer(Modifier.width(7.dp))
-        Icon(LogSenseIcons.Lock, contentDescription = "Set in code", tint = cs.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(14.dp))
-    }
-}
-
-@Composable
-private fun AddTagChip(onClick: () -> Unit) {
-    val cs = MaterialTheme.colorScheme
-    Row(
-        Modifier
-            .height(38.dp)
+            .fillMaxWidth()
+            .heightIn(min = 46.dp)
             .clip(RoundedCornerShape(10.dp))
             .dashedBorder(cs.primary, 10.dp)
             .clickable(onClick = onClick)
@@ -416,39 +353,53 @@ private fun AddTagChip(onClick: () -> Unit) {
     }
 }
 
+/** Add or edit a Settings tag: a tag name (locked when editing) + an optional, validated regex. */
 @Composable
-private fun AddTagDialog(existing: List<String>, onDismiss: () -> Unit, onAdd: (String) -> Unit) {
-    var input by remember { mutableStateOf("") }
+private fun TagPatternDialog(
+    draft: TagPatternDraft,
+    existing: List<String>,
+    onDismiss: () -> Unit,
+    onSave: (tag: String, regex: String) -> Unit,
+) {
+    val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
+    var tag by remember { mutableStateOf(draft.tag) }
+    var regex by remember { mutableStateOf(draft.pattern) }
+    val regexError = remember(regex) { patternError(regex) }
+    val tagError = if (tag.isNotBlank() && tag.trim() in existing) "Tag already added." else null
+    val canSave = tag.isNotBlank() && tagError == null && regexError == null
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Add capture tag") },
+        title = { Text(if (draft.isNew) "Add capture tag" else "Edit ${draft.tag}") },
         text = {
             Column {
-                Text(
-                    "The logcat tag to capture as analytics events.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(16.dp))
                 OutlinedTextField(
-                    value = input,
-                    onValueChange = { input = it },
+                    value = tag,
+                    onValueChange = { tag = it },
+                    enabled = draft.isNew,
                     singleLine = true,
                     label = { Text("Tag") },
-                    placeholder = { Text("AnalyticsEngine", fontFamily = FontFamily.Monospace) },
-                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    placeholder = { Text("e.g. AppEvents", style = mono) },
+                    textStyle = mono,
+                    isError = tagError != null,
+                    supportingText = tagError?.let { { Text(it) } },
+                )
+                Spacer(Modifier.height(12.dp))
+                OutlinedTextField(
+                    value = regex,
+                    onValueChange = { regex = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 2,
+                    label = { Text("Regex (optional)") },
+                    placeholder = { Text("(?<name>\\w+)\\s*->\\s*\\{(?<params>.*)\\}", style = mono) },
+                    textStyle = mono,
+                    isError = regexError != null,
+                    supportingText = { Text(regexError ?: "Empty = built-in parser. Needs (?<name>…); (?<params>…) optional.") },
                 )
             }
         },
         confirmButton = {
-            TextButton(
-                onClick = {
-                    val t = input.trim()
-                    if (t.isNotEmpty() && t !in existing) onAdd(t)
-                    onDismiss()
-                },
-                enabled = input.isNotBlank(),
-            ) { Text("Add") }
+            TextButton(onClick = { onSave(tag.trim(), regex.trim()) }, enabled = canSave) { Text("Save") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
     )

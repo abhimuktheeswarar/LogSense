@@ -7,6 +7,7 @@ import com.msabhi.logsense.LogSenseConfig
 class LsApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        LogSense.init(this, LogSenseConfig(analyticsTags = setOf("Analytics")))
+        // null regex = built-in parser (the sample logs plain name/json/bundle events).
+        LogSense.init(this, LogSenseConfig(analyticsTagPatterns = mapOf("Analytics" to null)))
     }
 }

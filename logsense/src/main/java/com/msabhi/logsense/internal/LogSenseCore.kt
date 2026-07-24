@@ -91,8 +91,7 @@ internal class LogSenseCore private constructor(
             { database.eventDao() },
             scope,
             sessionId,
-            eventPattern = { prefs.eventPattern.value },
-            extraTags = { prefs.eventTags.value.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toSet() },
+            settingsTagPatterns = { prefs.tagPatterns.value },
         )
         startReader()
 

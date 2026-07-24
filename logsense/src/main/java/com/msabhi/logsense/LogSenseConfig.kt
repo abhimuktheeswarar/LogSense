@@ -5,25 +5,28 @@ package com.msabhi.logsense
  * construct with named arguments for just what you need.
  */
 public class LogSenseConfig(
-    /** Log tags whose lines are treated as analytics events. Empty = analytics disabled. */
-    public val analyticsTags: Set<String> = emptySet(),
     /**
-     * Converts a matching log line into an [AnalyticsEvent]. Return null to skip the line.
-     * When null, a built-in extractor is used that understands
-     * `name {json}`, `name Bundle[{k=v}]` and `name k=v, k2=v2` formats.
+     * Log tags to capture as analytics events, each mapped to an **optional regex** that extracts the
+     * event from that tag's lines. Empty map = analytics disabled.
+     *
+     * - value `null` → use the built-in parser (understands `name {json}`, `name Bundle[{k=v}]` and
+     *   `name k=v, k2=v2`; a `params` group capturing a `{json}` object is parsed as JSON, and string
+     *   fields that themselves hold escaped JSON are unwrapped into flat params).
+     * - value a regex → use it for *that tag only*, exposing a named group `name` (required) and an
+     *   optional `params`. Use this for SDKs the built-in parser can't infer (e.g. those that bury the
+     *   event name inside a JSON payload). A line that doesn't match is skipped.
+     *
+     * QA can add further tags (with their own optional regex) in Settings, but the ones set here are
+     * locked and can't be edited in-app. [analyticsExtractor], if set, overrides the regex for every
+     * captured tag.
+     */
+    public val analyticsTagPatterns: Map<String, String?> = emptyMap(),
+    /**
+     * Converts a matching log line into an [AnalyticsEvent]. Return null to skip the line. When null,
+     * each tag in [analyticsTagPatterns] uses its own regex (or the built-in parser). When set, this
+     * overrides those and runs for every captured tag.
      */
     public val analyticsExtractor: ((tag: String, message: String) -> AnalyticsEvent?)? = null,
-    /**
-     * Regex patterns for lifting events out of matching log lines — the code-level equivalent of the
-     * in-app **Custom event pattern**, for SDKs the built-in parser can't infer (e.g. those that bury
-     * the event name inside a JSON payload). Each **value** is a regex exposing a named group `name`
-     * (required) and an optional `params` (a captured `{json}` object is parsed as JSON); each **key**
-     * is just a developer-facing label saying what that pattern is for — it isn't matched against, only
-     * documents the entry. Patterns are tried in insertion order, first match wins. A pattern a QA adds
-     * in Settings is tried *before* these, so it can override live without a rebuild. Ignored when
-     * [analyticsExtractor] is set.
-     */
-    public val analyticsPatterns: Map<String, String> = emptyMap(),
     /** Max log lines kept in the in-memory buffer. */
     public val maxBufferedLines: Int = 50_000,
     /**

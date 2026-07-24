@@ -15,36 +15,31 @@ internal class AnalyticsDetector(
     private val eventDao: () -> EventDao,
     private val scope: CoroutineScope,
     private val sessionId: String,
-    private val eventPattern: () -> String = { "" },
-    private val extraTags: () -> Set<String> = { emptySet() },
+    private val settingsTagPatterns: () -> Map<String, String?> = { emptyMap() },
 ) {
 
-    // Precedence: a code-level analyticsExtractor wins; else regex patterns — the QA's Settings
-    // pattern first (so a live tweak overrides the shipped one), then config.analyticsPatterns
-    // (recompiled only when the Settings pattern changes; config patterns are constant); else the
-    // built-in DefaultExtractor.
+    // Each captured tag gets its own extractor: a code-level analyticsExtractor overrides everything;
+    // else the tag's regex (skips non-matching lines); else the built-in DefaultExtractor. Tags set
+    // in config are authoritative — a Settings tag can't shadow one. The per-tag map is rebuilt only
+    // when the live Settings tags change (config tags are constant).
     private val configExtractor = config.analyticsExtractor
-    private val configPatterns = config.analyticsPatterns.values.joinToString("\n")
-    private var cachedPattern: String? = null
-    private var cachedExtractor: ((String, String) -> AnalyticsEvent?)? = null
+    private var cachedTagPatterns: Map<String, String?>? = null
+    private var cachedByTag: Map<String, (String, String) -> AnalyticsEvent?> = emptyMap()
 
-    private fun extractor(): (String, String) -> AnalyticsEvent? {
-        configExtractor?.let { return it }
-        val pattern = eventPattern()
-        if (pattern != cachedPattern) {
-            cachedPattern = pattern
-            cachedExtractor = RegexExtractor.of("$pattern\n$configPatterns")
+    private fun extractors(): Map<String, (String, String) -> AnalyticsEvent?> {
+        val merged = settingsTagPatterns() + config.analyticsTagPatterns // config wins on any collision
+        if (merged != cachedTagPatterns) {
+            cachedTagPatterns = merged
+            cachedByTag = merged.mapValues { (_, pattern) -> configExtractor ?: extractorFor(pattern) }
         }
-        return cachedExtractor ?: DefaultExtractor
+        return cachedByTag
     }
 
     fun process(batch: List<LogEntry>) {
-        // Tags from code config plus any the user added in Settings (evaluated live).
-        val tags = config.analyticsTags + extraTags()
-        if (tags.isEmpty()) return
-        val extractor = extractor()
+        val byTag = extractors()
+        if (byTag.isEmpty()) return
         val entities = batch.mapNotNull { entry ->
-            if (entry.tag !in tags) return@mapNotNull null
+            val extractor = byTag[entry.tag] ?: return@mapNotNull null // tag not captured
             val event = runCatching { extractor(entry.tag, entry.message) }.getOrNull() ?: return@mapNotNull null
             EventEntity(
                 timestamp = entry.timeMs,
@@ -62,3 +57,7 @@ internal class AnalyticsDetector(
         }
     }
 }
+
+/** A tag's extractor: its regex (unusable/empty falls back), or the built-in parser when null. */
+internal fun extractorFor(pattern: String?): (String, String) -> AnalyticsEvent? =
+    pattern?.takeIf { it.isNotBlank() }?.let { RegexExtractor.of(it) } ?: DefaultExtractor

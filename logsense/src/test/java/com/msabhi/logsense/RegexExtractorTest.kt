@@ -1,6 +1,7 @@
 package com.msabhi.logsense
 
 import com.msabhi.logsense.internal.analytics.RegexExtractor
+import com.msabhi.logsense.internal.analytics.extractorFor
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -93,6 +94,19 @@ class RegexExtractorTest {
         assertEquals(2, event.params["qty"])
         assertEquals("123", event.params["ts"])  // sibling scalar kept as-is
         assertTrue(event.params.containsKey("attrs").not()) // wrapper key gone, flattened
+    }
+
+    @Test
+    fun `extractorFor routes null or blank to the built-in parser, a regex to itself`() {
+        // null / blank pattern -> built-in parser (handles name {json}, etc.)
+        assertEquals("purchase", extractorFor(null)("T", """purchase {"sku":"pro"}""")!!.name)
+        assertEquals("app_open", extractorFor("   ")("T", "app_open")!!.name)
+        // a real regex -> used for that tag; a non-matching line is skipped
+        val rx = extractorFor("""evt=(?<name>\w+)""")
+        assertEquals("login", rx("T", "evt=login extra")!!.name)
+        assertNull(rx("T", "unrelated line"))
+        // invalid regex -> falls back to the built-in parser rather than dropping every event
+        assertEquals("hello", extractorFor("(?<name>")("T", "hello")!!.name)
     }
 
     @Test
