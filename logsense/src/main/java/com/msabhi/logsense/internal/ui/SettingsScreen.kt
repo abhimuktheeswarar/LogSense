@@ -21,6 +21,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
@@ -107,6 +108,33 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                     subtitle = "Show crashes from earlier app runs, not just this one.",
                     checked = keepCrashes,
                     onCheckedChange = { core.setKeepPastCrashes(it) },
+                )
+
+                Spacer(Modifier.height(28.dp))
+                Text("Events", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                val pattern by core.prefs.eventPattern.collectAsState()
+                val patternValid = remember(pattern) { pattern.isBlank() || runCatching { Regex(pattern) }.isSuccess }
+                OutlinedTextField(
+                    value = pattern,
+                    onValueChange = { core.prefs.setEventPattern(it) },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Custom event pattern (regex)") },
+                    placeholder = {
+                        Text("(?<name>\\w+)\\s*->\\s*\\{(?<params>.*)\\}", fontFamily = FontFamily.Monospace)
+                    },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                    isError = !patternValid,
+                    supportingText = {
+                        Text(
+                            if (!patternValid) {
+                                "Not a valid regular expression."
+                            } else {
+                                "Optional. Capture groups (?<name>…) and (?<params>…) pull the event name and its " +
+                                    "key=value params. Empty = built-in parser; a code analyticsExtractor overrides this."
+                            },
+                        )
+                    },
                 )
             }
             AboutFooter()

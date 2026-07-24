@@ -16,7 +16,7 @@ import org.json.JSONObject
  * 6. anything else                       — the whole message as the event name
  *
  * The event **name** is the last identifier before the payload, so a leading verb (`logEvent`,
- * `track`, `logEvent`, `GA ->` …), arrows and separators are skipped automatically. A value may
+ * `track`, `GA ->` …), arrows and separators are skipped automatically. A value may
  * itself contain commas — pairs are only split before the next `key=`, and any wrapping braces or
  * brackets are stripped. Falls back to the log **tag** when no name is present.
  *
@@ -72,21 +72,24 @@ internal object DefaultExtractor : (String, String) -> AnalyticsEvent? {
     private val ARROWS = listOf("->", "=>")
     private val NAME_TOKEN = Regex("""[\w.]+""")
 
-    /** A `key = value` pair, where the value runs until the next `, key=` or the end of the text. */
-    private val KV = Regex("""([\w.]+)\s*=\s*(.*?)(?=,\s*[\w.]+\s*=|$)""")
-
     /** Event name = the last identifier in the text before the payload (skips verbs/arrows/colons). */
     private fun nameBefore(msg: String, payloadStart: Int, tag: String): String =
         NAME_TOKEN.findAll(msg.substring(0, payloadStart)).lastOrNull()?.value ?: tag
 
     private fun cleanName(prefix: String, tag: String): String =
         prefix.trim().trimEnd(':', ',', '-').trim().ifEmpty { tag }
+}
 
-    /** Parses `key=value, k2=v2`, tolerating wrapping braces/brackets and commas *inside* values. */
-    private fun parseKeyValues(text: String): Map<String, Any?> {
-        val body = text.trim().trim('{', '}', '[', ']', ' ')
-        return KV.findAll(body).associate { m -> m.groupValues[1].trim() to (m.groupValues[2].trim() as Any?) }
-    }
+/** A `key = value` pair, where the value runs until the next `, key=` or the end of the text. */
+private val KV = Regex("""([\w.]+)\s*=\s*(.*?)(?=,\s*[\w.]+\s*=|$)""")
+
+/**
+ * Parses `key=value, k2=v2` into a map, tolerating wrapping braces/brackets and commas *inside*
+ * values. Shared by [DefaultExtractor] and the user-supplied [RegexExtractor] `params` group.
+ */
+internal fun parseKeyValues(text: String): Map<String, Any?> {
+    val body = text.trim().trim('{', '}', '[', ']', ' ')
+    return KV.findAll(body).associate { m -> m.groupValues[1].trim() to (m.groupValues[2].trim() as Any?) }
 }
 
 internal fun JSONObject.toMap(): Map<String, Any?> = buildMap {

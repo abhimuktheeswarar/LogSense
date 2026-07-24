@@ -30,6 +30,14 @@ internal class LogSensePrefs(context: Context) {
     val keepPastEvents = MutableStateFlow(sp.getBoolean(KEY_KEEP_EVENTS, true))
     val keepPastCrashes = MutableStateFlow(sp.getBoolean(KEY_KEEP_CRASHES, true))
 
+    /** Optional user-defined regex (Settings) for parsing events; empty = use the built-in parser. */
+    val eventPattern = MutableStateFlow(sp.getString(KEY_EVENT_PATTERN, "").orEmpty())
+
+    fun setEventPattern(pattern: String) {
+        eventPattern.value = pattern
+        sp.edit().putString(KEY_EVENT_PATTERN, pattern).apply()
+    }
+
     fun setLogScroll(mode: LogScroll) {
         logScroll.value = mode
         sp.edit().putString(KEY_LOG_SCROLL, mode.name).apply()
@@ -85,6 +93,7 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_LOG_SCROLL = "log_scroll"
         private const val KEY_KEEP_EVENTS = "keep_past_events"
         private const val KEY_KEEP_CRASHES = "keep_past_crashes"
+        private const val KEY_EVENT_PATTERN = "event_pattern"
         val DEFAULT_TAB = LogTab(id = 0, name = "All")
     }
 }

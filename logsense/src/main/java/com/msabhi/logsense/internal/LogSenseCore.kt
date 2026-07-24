@@ -71,7 +71,7 @@ internal class LogSenseCore private constructor(
         }
         Notifications.createChannels(appContext)
 
-        detector = AnalyticsDetector(config, { database.eventDao() }, scope, sessionId)
+        detector = AnalyticsDetector(config, { database.eventDao() }, scope, sessionId, eventPattern = { prefs.eventPattern.value })
         startReader()
 
         scope.launch {
