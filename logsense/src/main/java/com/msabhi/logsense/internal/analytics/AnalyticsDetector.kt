@@ -19,9 +19,12 @@ internal class AnalyticsDetector(
     private val extraTags: () -> Set<String> = { emptySet() },
 ) {
 
-    // Precedence: a code-level analyticsExtractor wins; else the user's Settings regex (recompiled
-    // only when it changes); else the built-in DefaultExtractor.
+    // Precedence: a code-level analyticsExtractor wins; else regex patterns — the QA's Settings
+    // pattern first (so a live tweak overrides the shipped one), then config.analyticsPatterns
+    // (recompiled only when the Settings pattern changes; config patterns are constant); else the
+    // built-in DefaultExtractor.
     private val configExtractor = config.analyticsExtractor
+    private val configPatterns = config.analyticsPatterns.values.joinToString("\n")
     private var cachedPattern: String? = null
     private var cachedExtractor: ((String, String) -> AnalyticsEvent?)? = null
 
@@ -30,7 +33,7 @@ internal class AnalyticsDetector(
         val pattern = eventPattern()
         if (pattern != cachedPattern) {
             cachedPattern = pattern
-            cachedExtractor = RegexExtractor.of(pattern)
+            cachedExtractor = RegexExtractor.of("$pattern\n$configPatterns")
         }
         return cachedExtractor ?: DefaultExtractor
     }

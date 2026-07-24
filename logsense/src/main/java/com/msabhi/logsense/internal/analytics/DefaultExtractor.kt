@@ -106,9 +106,9 @@ internal fun JSONObject.toMap(): Map<String, Any?> = buildMap {
             JSONObject.NULL -> put(key, null)
             is JSONObject, is JSONArray -> put(key, value.toString()) // nested kept as text — deliberate
             // A string that is itself a JSON object = an SDK cramming a whole attribute set through
-            // one string field as (double-)escaped JSON (MoEngage's EVENT_ATTRS / EVENT_ATTRS_CUST is
-            // exactly this). Unwrap it so those attributes become their own rows, un-escaped, instead
-            // of one unreadable `{\"k\":v}` blob. Real nested objects above are still kept as text.
+            // one string field as (double-)escaped JSON. Unwrap it so those attributes become their
+            // own rows, un-escaped, instead of one unreadable `{\"k\":v}` blob. Real nested objects
+            // above are still kept as text.
             is String -> value.asJsonObject()?.let { putAll(it.toMap()) } ?: put(key, value)
             else -> put(key, value)
         }

@@ -13,6 +13,17 @@ public class LogSenseConfig(
      * `name {json}`, `name Bundle[{k=v}]` and `name k=v, k2=v2` formats.
      */
     public val analyticsExtractor: ((tag: String, message: String) -> AnalyticsEvent?)? = null,
+    /**
+     * Regex patterns for lifting events out of matching log lines — the code-level equivalent of the
+     * in-app **Custom event pattern**, for SDKs the built-in parser can't infer (e.g. those that bury
+     * the event name inside a JSON payload). Each **value** is a regex exposing a named group `name`
+     * (required) and an optional `params` (a captured `{json}` object is parsed as JSON); each **key**
+     * is just a developer-facing label saying what that pattern is for — it isn't matched against, only
+     * documents the entry. Patterns are tried in insertion order, first match wins. A pattern a QA adds
+     * in Settings is tried *before* these, so it can override live without a rebuild. Ignored when
+     * [analyticsExtractor] is set.
+     */
+    public val analyticsPatterns: Map<String, String> = emptyMap(),
     /** Max log lines kept in the in-memory buffer. */
     public val maxBufferedLines: Int = 50_000,
     /**

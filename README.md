@@ -30,11 +30,12 @@ launcher icon.
   **no permissions, no root, no adb** needed.
 - **Analytics events** — configure which log tags carry analytics; LogSense parses matching lines into
   structured `name + params` events (built-in support for `name {json}`, `name Bundle[{k=v}]` and
-  `name k=v, k2=v2` formats, or plug in your own extractor). For SDKs that bury the name inside a JSON
-  payload (MoEngage, etc.), add a **Custom event pattern** regex in Settings with `name` / `params` named
-  groups — a `params` group that captures a `{json}` object is parsed as JSON, and attribute sets crammed
-  into a string field as escaped JSON are unwrapped into their own rows. Per-tag tabs, live keyword filter,
-  the same find bar, and export one / selected / all events as JSON (text or file).
+  `name k=v, k2=v2` formats, or plug in your own extractor). For SDKs that bury the event name inside a JSON
+  payload, supply your own regex patterns with `name` / `params` named groups — in code via
+  `analyticsPatterns` (a `label -> regex` map) or live in Settings' **Custom event pattern**. A `params`
+  group that captures a `{json}` object is parsed as JSON, and attribute sets crammed into a string field as
+  escaped JSON are unwrapped into their own rows. Per-tag tabs, live keyword filter, the same find bar, and
+  export one / selected / all events as JSON (text or file).
 - **Crash capture** — an uncaught-exception handler writes the stacktrace, device info and the last ~200
   log lines to disk *before* the process dies, and posts a crash notification immediately (best-effort, from
   the crashing process) — tapping it opens the report once it's ingested on the next launch. ANRs and native
@@ -51,8 +52,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.3.10")
-    releaseImplementation("com.msabhi:logsense-no-op:0.3.10")
+    debugImplementation("com.msabhi:logsense:0.3.11")
+    releaseImplementation("com.msabhi:logsense-no-op:0.3.11")
 }
 ```
 
@@ -79,6 +80,7 @@ LogSense.init(
     LogSenseConfig(
         analyticsTags = emptySet(),      // tags whose lines are analytics events
         analyticsExtractor = null,       // custom (tag, message) -> AnalyticsEvent?; null = built-in parser
+        analyticsPatterns = emptyMap(),  // label -> regex (name/params named groups) for JSON-payload SDKs
         maxBufferedLines = 50_000,       // in-memory log ring buffer size (auto-reduced on low-RAM devices)
         captureJvmCrashes = true,        // install a chaining uncaught-exception handler; false = leave it to your reporter
         crashContextLines = 200,         // log lines attached to each crash report
