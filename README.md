@@ -52,8 +52,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.4.0")
-    releaseImplementation("com.msabhi:logsense-no-op:0.4.0")
+    debugImplementation("com.msabhi:logsense:0.4.1")
+    releaseImplementation("com.msabhi:logsense-no-op:0.4.1")
 }
 ```
 

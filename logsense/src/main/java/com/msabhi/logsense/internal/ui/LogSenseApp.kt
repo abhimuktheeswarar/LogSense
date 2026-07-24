@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,7 +54,6 @@ import com.msabhi.logsense.internal.ui.theme.color
 import com.msabhi.logsense.internal.ui.theme.liveColor
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 internal sealed interface Detail {
@@ -122,6 +122,11 @@ internal fun LogSenseApp(
             }
         }
 
+        // Keep each tab's transient state (selected event tag, scroll position, filter) alive while a
+        // detail or settings screen replaces the tabs on phones, so returning lands back where you were.
+        // Without this, TabsScaffold leaves the composition and its rememberSaveable state resets.
+        val tabsState = rememberSaveableStateHolder()
+
         BoxWithConstraints {
             val wide = maxWidth >= 840.dp
             val current = detail
@@ -129,15 +134,17 @@ internal fun LogSenseApp(
                 openingCrash && current == null -> CrashLoadingScreen(onCancel = { openingCrash = false })
                 showSettings -> SettingsScreen(core) { showSettings = false }
                 current != null && !wide -> DetailScaffold(core, current, onBack = { detail = null })
-                else -> TabsScaffold(
-                    core = core,
-                    tab = tab,
-                    onTab = { tab = it; detail = null },
-                    wide = wide,
-                    detail = current,
-                    onOpenDetail = { detail = it },
-                    onSettings = { showSettings = true },
-                )
+                else -> tabsState.SaveableStateProvider("tabs") {
+                    TabsScaffold(
+                        core = core,
+                        tab = tab,
+                        onTab = { tab = it; detail = null },
+                        wide = wide,
+                        detail = current,
+                        onOpenDetail = { detail = it },
+                        onSettings = { showSettings = true },
+                    )
+                }
             }
         }
     }
@@ -239,7 +246,6 @@ private fun TabsScaffold(
                 },
                 actions = {
                     val capturing by core.captureEnabled.collectAsState()
-                    val ctx = androidx.compose.ui.platform.LocalContext.current
                     if (tab == 0) {
                         IconButton(onClick = { core.setCaptureEnabled(!capturing) }) {
                             Icon(
@@ -249,26 +255,8 @@ private fun TabsScaffold(
                             )
                         }
                     }
-                    if (tab == 1) {
-                        val eventCount by remember { core.database.eventDao().observeAll() }.collectAsState(initial = emptyList())
-                        ShareMenuButton(
-                            contentDescription = "Export all events",
-                            fileLabel = "JSON file",
-                            enabled = eventCount.isNotEmpty(),
-                            onText = {
-                                core.scope.launch {
-                                    val all = core.database.eventDao().getAll()
-                                    if (all.isNotEmpty()) ShareUtil.shareText(ctx, "events_all", EventExport.toJsonString(all))
-                                }
-                            },
-                            onFile = {
-                                core.scope.launch {
-                                    val all = core.database.eventDao().getAll()
-                                    if (all.isNotEmpty()) ShareUtil.shareJsonFile(ctx, "events_all", EventExport.toJsonString(all))
-                                }
-                            },
-                        )
-                    }
+                    // Events share lives in the Events header (EventsScreen) so it can honor the
+                    // selected tag + filter; Crashes has its own per-report share.
                     IconButton(onClick = onSettings) {
                         Icon(LogSenseIcons.Settings, contentDescription = "Settings")
                     }

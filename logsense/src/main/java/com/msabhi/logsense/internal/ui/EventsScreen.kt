@@ -165,6 +165,16 @@ internal fun EventsScreen(
         else ShareUtil.shareText(context, "events", json)
     }
 
+    // Exports exactly what's on screen — the selected tag and the text filter — so sharing while a tag
+    // is selected yields only that tag's events (and "All" with no filter is still everything).
+    fun shareVisible(asFile: Boolean) {
+        if (filtered.isEmpty()) return
+        val json = EventExport.toJsonString(filtered)
+        val name = selectedTag ?: "events"
+        if (asFile) core.scope.launch { ShareUtil.shareJsonFile(context, name, json) }
+        else ShareUtil.shareText(context, name, json)
+    }
+
     Box(Modifier.fillMaxSize()) {
         Row(Modifier.fillMaxSize()) {
             Column(Modifier.weight(1f)) {
@@ -186,6 +196,13 @@ internal fun EventsScreen(
                         IconButton(onClick = { searchOpen = !searchOpen }) {
                             Icon(LogSenseIcons.Search, contentDescription = "Find", tint = if (searchOpen) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
+                        ShareMenuButton(
+                            contentDescription = if (selectedTag == null) "Export events" else "Export $selectedTag events",
+                            fileLabel = "JSON file",
+                            enabled = filtered.isNotEmpty(),
+                            onText = { shareVisible(false) },
+                            onFile = { shareVisible(true) },
+                        )
                         IconButton(onClick = { showDeleteAll = true }, enabled = events.any { it.id !in pending }) {
                             Icon(LogSenseIcons.Delete, contentDescription = "Delete all events")
                         }
