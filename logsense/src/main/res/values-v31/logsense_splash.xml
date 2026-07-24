@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Android 12+ draws the cold-start splash via the SplashScreen API, which ignores
+         windowBackground for the animated portion — so drive it with the logo + brand colour too. -->
+    <style name="Theme.LogSense.Launch" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/logsense_splash</item>
+        <item name="android:windowSplashScreenBackground">@color/logsense_splash_bg</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/logsense_ic_launcher</item>
+    </style>
+</resources>

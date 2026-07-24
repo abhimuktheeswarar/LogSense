@@ -12,7 +12,7 @@
             android:label="@string/logsense_name"
             android:launchMode="singleTask"
             android:taskAffinity="${applicationId}.LogSenseTask"
-            android:theme="@android:style/Theme.Material.NoActionBar" />
+            android:theme="@style/Theme.LogSense.Launch" />
 
         <!-- Launcher entry so the UI is reachable without notification permission.
              Host apps can remove it with tools:node="remove". -->

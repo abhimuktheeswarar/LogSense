@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Light neutral matching the LogSense UI; a fixed brand colour since the cold-start window
+         runs before the app (and thus before the light/dark choice) is known. -->
+    <color name="logsense_splash_bg">#F3F2F9</color>
+
+    <!-- Applied to LogSenseActivity so its cold-start window shows the splash instead of a blank. -->
+    <style name="Theme.LogSense.Launch" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/logsense_splash</item>
+    </style>
+</resources>

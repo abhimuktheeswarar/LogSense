@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cold-start window for LogSenseActivity: the logo centred on a themed background, so opening
+     LogSense from a dead process shows something branded instead of a blank surface. Covered by the
+     Compose UI as soon as it renders. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/logsense_splash_bg" />
+    <item
+        android:width="104dp"
+        android:height="104dp"
+        android:gravity="center"
+        android:drawable="@drawable/logsense_ic_launcher" />
+</layer-list>

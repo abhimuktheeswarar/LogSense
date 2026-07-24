@@ -56,6 +56,10 @@ internal class LogSenseCore private constructor(
     @Volatile
     var crashNotificationConsumed = false
 
+    /** Id of the crash ingested this launch — the one the immediate alert is about — so the UI can
+     *  deep-link straight to its detail when the app is opened from the crash notification. */
+    val lastCrashId = MutableStateFlow<Long?>(null)
+
     /** The host app's display name — shown prominently; LogSense stays a small subtitle. */
     val appName: String = runCatching {
         appContext.applicationInfo.loadLabel(appContext.packageManager).toString()
@@ -113,6 +117,7 @@ internal class LogSenseCore private constructor(
             // One crash notification only — the newest, or a summary when several arrived at once.
             val ingested = (fromFiles + fromExitInfo).sortedByDescending { it.timestamp }
             val newest = ingested.firstOrNull()
+            if (newest != null) lastCrashId.value = newest.id
             if (newest != null && !crashNotificationConsumed) {
                 Notifications.postCrash(
                     appContext,

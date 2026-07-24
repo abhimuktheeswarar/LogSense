@@ -1,5 +1,6 @@
 package com.msabhi.logsense.internal.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -7,6 +8,7 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -48,7 +51,10 @@ import com.msabhi.logsense.internal.reader.LogLevel
 import com.msabhi.logsense.internal.ui.theme.LogSenseTheme
 import com.msabhi.logsense.internal.ui.theme.color
 import com.msabhi.logsense.internal.ui.theme.liveColor
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 
 internal sealed interface Detail {
     val id: Long
@@ -88,6 +94,9 @@ internal fun LogSenseApp(
         var tab by rememberSaveable { mutableIntStateOf(0) }
         var detail by rememberSaveable(stateSaver = DetailSaver) { mutableStateOf<Detail?>(null) }
         var showSettings by rememberSaveable { mutableStateOf(false) }
+        // True while we opened from the crash notification and are waiting for that crash to ingest.
+        // Deliberately not saveable: it must not survive as `true` past the effect that clears it.
+        var openingCrash by remember { mutableStateOf(false) }
 
         LaunchedEffect(pendingCrashId) {
             if (pendingCrashId != null) {
@@ -97,12 +106,18 @@ internal fun LogSenseApp(
             }
         }
 
-        // Immediate crash alert (no row yet): just land on the Crashes list.
+        // Opened from the immediate crash alert: land on Crashes, then — as soon as the crash that
+        // fired it finishes ingesting (it has no id at alert time) — open its detail directly instead
+        // of leaving the user on the list. Falls back to the list if nothing lands within the window.
         LaunchedEffect(openCrashes) {
             if (openCrashes) {
                 tab = 2
                 detail = null
                 showSettings = false
+                openingCrash = true
+                val id = withTimeoutOrNull(10_000) { core.lastCrashId.filterNotNull().first() }
+                if (id != null) detail = Detail.Crash(id)
+                openingCrash = false
                 onOpenCrashesConsumed()
             }
         }
@@ -111,6 +126,7 @@ internal fun LogSenseApp(
             val wide = maxWidth >= 840.dp
             val current = detail
             when {
+                openingCrash && current == null -> CrashLoadingScreen(onCancel = { openingCrash = false })
                 showSettings -> SettingsScreen(core) { showSettings = false }
                 current != null && !wide -> DetailScaffold(core, current, onBack = { detail = null })
                 else -> TabsScaffold(
@@ -123,6 +139,26 @@ internal fun LogSenseApp(
                     onSettings = { showSettings = true },
                 )
             }
+        }
+    }
+}
+
+/** Shown while the app was opened from the crash notification and we're waiting for that crash to
+ *  finish ingesting after a cold start — so the user sees "loading", not a blank screen or the list. */
+@Composable
+private fun CrashLoadingScreen(onCancel: () -> Unit) {
+    BackHandler(onBack = onCancel)
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) {
+            CircularProgressIndicator()
+            Text(
+                "Loading crash…",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
     }
 }
