@@ -86,6 +86,7 @@ internal object Notifications {
             .setSubText(context.getString(R.string.logsense_name))
             .setAutoCancel(true)
             .setLocalOnly(true)
+            .setOnlyAlertOnce(true) // the post-ingestion [postCrash] updates this in place, silently
             .setContentIntent(launchPendingIntent(context, crashId = null, openCrashes = true))
             .build()
         notify(context, ID_CRASH, notification)
@@ -99,10 +100,16 @@ internal object Notifications {
             .setSubText(context.getString(R.string.logsense_name))
             .setAutoCancel(true)
             .setLocalOnly(true)
+            .setOnlyAlertOnce(true) // don't re-alert if the immediate crash alert already fired
             .setContentIntent(launchPendingIntent(context, crashId))
             .addAction(0, "Share", crashSharePendingIntent(context, crashId))
             .build()
         notify(context, ID_CRASH, notification)
+    }
+
+    /** Removes the crash notification — e.g. once the user has opened it and is viewing the crash. */
+    fun cancelCrash(context: Context) {
+        NotificationManagerCompat.from(context).cancel(ID_CRASH)
     }
 
     private fun crashSharePendingIntent(context: Context, crashId: Long): PendingIntent {

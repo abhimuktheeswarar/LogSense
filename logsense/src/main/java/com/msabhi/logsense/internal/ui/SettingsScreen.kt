@@ -63,7 +63,6 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import com.msabhi.logsense.BuildConfig
 import com.msabhi.logsense.R
 import com.msabhi.logsense.ThemeMode
@@ -259,9 +258,17 @@ private fun EventPatternEditor(core: LogSenseCore) {
     val saved by core.prefs.eventPattern.collectAsState()
     var editing by rememberSaveable { mutableStateOf(false) }
     var draft by rememberSaveable { mutableStateOf(saved) }
+    // Validate each non-empty line: must compile, and must declare the (?<name>…) group the
+    // extractor needs — otherwise it's a valid regex that silently captures nothing ("random text").
     val error = remember(draft) {
         draft.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }
-            .firstOrNull { runCatching { Regex(it) }.isFailure }
+            .firstNotNullOfOrNull { line ->
+                when {
+                    runCatching { Regex(line) }.isFailure -> "Not a valid regular expression."
+                    !line.contains("(?<name>") -> "Each pattern needs a (?<name>…) group to name the event."
+                    else -> null
+                }
+            }
     }
     val mono = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace)
 
@@ -298,7 +305,7 @@ private fun EventPatternEditor(core: LogSenseCore) {
             textStyle = mono,
             isError = error != null,
             supportingText = if (error != null) {
-                { Text("Not a valid regular expression: $error") }
+                { Text(error) }
             } else {
                 null
             },
@@ -479,12 +486,6 @@ private fun AboutFooter() {
             text = BuildConfig.VERSION_NAME,
             style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
             color = cs.onSurfaceVariant,
-        )
-        Text(
-            text = "APACHE 2.0",
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, letterSpacing = 1.4.sp),
-            color = cs.primary,
-            modifier = Modifier.padding(top = 2.dp),
         )
     }
 }

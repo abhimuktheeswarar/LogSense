@@ -22,6 +22,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -114,10 +116,15 @@ private fun EventDetailContent(core: LogSenseCore, event: EventEntity) {
 
 @Composable
 internal fun CrashDetailPane(core: LogSenseCore, id: Long) {
-    val crash by produceState<CrashEntity?>(initialValue = null, id) {
-        value = core.database.crashDao().get(id)
+    // Observe (not one-shot): a crash opened from its notification before ingestion finishes fills
+    // in when the row lands, and we show a spinner meanwhile instead of a blank screen.
+    val crash by remember(id) { core.database.crashDao().observe(id) }.collectAsState(initial = null)
+    val current = crash
+    if (current == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    } else {
+        CrashDetailContent(core, current)
     }
-    crash?.let { CrashDetailContent(core, it) }
 }
 
 @Composable

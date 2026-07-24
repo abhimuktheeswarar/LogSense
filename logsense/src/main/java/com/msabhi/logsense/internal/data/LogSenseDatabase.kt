@@ -123,6 +123,11 @@ internal interface CrashDao {
     @Query("SELECT * FROM crashes WHERE id = :id")
     suspend fun get(id: Long): CrashEntity?
 
+    /** Reactive by-id lookup: emits when the row is (later) ingested, so a deep-link opened before
+     *  ingestion finishes fills in instead of staying blank. */
+    @Query("SELECT * FROM crashes WHERE id = :id")
+    fun observe(id: Long): Flow<CrashEntity?>
+
     @Query("DELETE FROM crashes WHERE id = :id") suspend fun delete(id: Long)
 
     @Query("DELETE FROM crashes WHERE id IN (:ids)") suspend fun deleteIds(ids: List<Long>)

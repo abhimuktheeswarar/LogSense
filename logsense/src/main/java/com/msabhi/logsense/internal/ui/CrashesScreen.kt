@@ -20,6 +20,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -72,7 +73,9 @@ internal fun CrashesScreen(
     onOpen: (Long) -> Unit,
 ) {
     val dao = remember { core.database.crashDao() }
-    val crashes by remember { dao.observeAll() }.collectAsState(initial = emptyList())
+    // null = not loaded yet (show a spinner); emptyList = genuinely no crashes (empty state).
+    val crashesLoaded by remember { dao.observeAll() }.collectAsState(initial = null)
+    val crashes = crashesLoaded ?: emptyList()
     val sessions by remember { core.database.sessionDao().observeAll() }.collectAsState(initial = emptyList())
     val startedAt = remember(sessions) { sessions.associate { it.id to it.startedAt } }
     val uiScope = rememberCoroutineScope()
@@ -146,7 +149,9 @@ internal fun CrashesScreen(
                     }
                 }
 
-                if (visible.isEmpty()) {
+                if (crashesLoaded == null) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                } else if (visible.isEmpty()) {
                     CrashEmpty()
                 } else if (filtered.isEmpty()) {
                     CrashNoMatches(filterText) { filterText = "" }

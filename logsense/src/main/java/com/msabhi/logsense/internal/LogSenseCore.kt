@@ -45,6 +45,11 @@ internal class LogSenseCore private constructor(
     /** Global capture gate — flipped by the notification Pause/Resume actions. */
     val captureEnabled = MutableStateFlow(true)
 
+    /** Set true once the user opens the app from the crash notification, so this launch's
+     *  post-ingestion crash notification isn't posted again on top of what they're already viewing. */
+    @Volatile
+    var crashNotificationConsumed = false
+
     /** The host app's display name — shown prominently; LogSense stays a small subtitle. */
     val appName: String = runCatching {
         appContext.applicationInfo.loadLabel(appContext.packageManager).toString()
@@ -102,7 +107,7 @@ internal class LogSenseCore private constructor(
             // One crash notification only — the newest, or a summary when several arrived at once.
             val ingested = (fromFiles + fromExitInfo).sortedByDescending { it.timestamp }
             val newest = ingested.firstOrNull()
-            if (newest != null) {
+            if (newest != null && !crashNotificationConsumed) {
                 Notifications.postCrash(
                     appContext,
                     crashId = newest.id,

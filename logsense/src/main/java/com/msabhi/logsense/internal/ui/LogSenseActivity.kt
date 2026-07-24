@@ -20,6 +20,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.LogSenseCore
+import com.msabhi.logsense.internal.notify.Notifications
 import com.msabhi.logsense.internal.ui.theme.LogSenseTheme
 
 internal class LogSenseActivity : ComponentActivity() {
@@ -32,6 +33,7 @@ internal class LogSenseActivity : ComponentActivity() {
         enableEdgeToEdge()
         pendingCrashId = intent.crashId
         openCrashes = intent.openCrashes
+        consumeCrashNotificationIfOpenedFromIt()
         setContent {
             val core = LogSenseCore.instance
             if (core == null) {
@@ -52,6 +54,15 @@ internal class LogSenseActivity : ComponentActivity() {
         super.onNewIntent(intent)
         pendingCrashId = intent.crashId
         openCrashes = intent.openCrashes
+        consumeCrashNotificationIfOpenedFromIt()
+    }
+
+    /** Opened from the crash notification → don't re-post it after ingestion, and clear it now. */
+    private fun consumeCrashNotificationIfOpenedFromIt() {
+        if (pendingCrashId != null || openCrashes) {
+            LogSenseCore.instance?.crashNotificationConsumed = true
+            Notifications.cancelCrash(this)
+        }
     }
 
     private val Intent.crashId: Long?
