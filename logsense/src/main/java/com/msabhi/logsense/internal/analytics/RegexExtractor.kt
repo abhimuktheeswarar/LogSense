@@ -8,8 +8,9 @@ import com.msabhi.logsense.AnalyticsEvent
  *
  * - a named group **`name`** — the event name (required; a line with no match, or an empty name, is
  *   treated as "not an event" and skipped),
- * - an optional named group **`params`** — a `key=value, …` blob, parsed by [parseKeyValues]
- *   (so commas inside a value and wrapping braces are handled the same as the built-in parser).
+ * - an optional named group **`params`** — either a JSON object or a `key=value, …` blob, parsed by
+ *   [parseParams] (so a `{ ... }` payload is read as JSON and plain pairs the same as the built-in
+ *   parser; commas inside a value and wrapping braces are handled either way).
  *
  * Example for `logEvent = purchase -> {sku=pro, qty=2}`:
  * `(?<name>\w+)\s*->\s*\{(?<params>.*)\}`
@@ -19,7 +20,7 @@ internal class RegexExtractor(private val regex: Regex) : (String, String) -> An
     override fun invoke(tag: String, message: String): AnalyticsEvent? {
         val match = regex.find(message) ?: return null
         val name = group(match, "name")?.trim()?.ifEmpty { null } ?: return null
-        val params = group(match, "params")?.let { parseKeyValues(it) } ?: emptyMap()
+        val params = group(match, "params")?.let { parseParams(it) } ?: emptyMap()
         return AnalyticsEvent(name, params)
     }
 

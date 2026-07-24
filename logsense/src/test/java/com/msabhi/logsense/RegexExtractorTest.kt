@@ -68,6 +68,37 @@ class RegexExtractorTest {
     }
 
     @Test
+    fun `params group holding a JSON object is parsed as JSON`() {
+        // MRI_LOGS style: name lives inside the JSON, params is a clean {json} object.
+        val e = RegexExtractor.of(
+            """MRI_LOGS_UX -> .*"event":"(?<name>[^"]+)".*"data":(?<params>\{.*\})\}""",
+        )!!
+        val event = e(
+            "MRI_LOGS",
+            """MRI_LOGS_UX -> {"reqTime":1784900140986,"vndr_type":"APP","event":"current_close_screen","data":{"screenName":"LogSenseActivity"}}""",
+        )!!
+        assertEquals("current_close_screen", event.name)
+        assertEquals("LogSenseActivity", event.params["screenName"])
+    }
+
+    @Test
+    fun `MoEngage double-escaped EVENT_ATTRS is unwrapped into flat params`() {
+        // The event's real attributes are crammed into EVENT_ATTRS as escaped JSON; capturing the
+        // whole `attributes` object lets JSON parsing un-escape it, and the string-JSON unwrap then
+        // flattens the attributes into their own rows.
+        val e = RegexExtractor.of(
+            """trackEvent\(\):\s*\{\s*Event:\s*\{"name":"(?<name>[^"]+)","attributes":(?<params>\{.*\}),"time"""",
+        )!!
+        val line = """VG18 Core_EventHandler trackEvent(): { Event: {"name":"bus_home_screen_launch","attributes":{"EVENT_ATTRS":"{\"business_unit\":\"Bus\",\"is_logged_in\":\"Yes\"}","EVENT_G_TIME":"1784899961735","EVENT_L_TIME":"24:7:2026:19:2:41"},"time":1784899961736,"isInteractiveEvent":true}} """
+        val event = e("MoEngage", line)!!
+        assertEquals("bus_home_screen_launch", event.name)
+        assertEquals("Bus", event.params["business_unit"])   // unwrapped, un-escaped
+        assertEquals("Yes", event.params["is_logged_in"])
+        assertEquals("1784899961735", event.params["EVENT_G_TIME"]) // sibling scalar kept as-is
+        assertTrue(event.params.containsKey("EVENT_ATTRS").not()) // wrapper key gone, flattened
+    }
+
+    @Test
     fun `blank and invalid lines are skipped, valid ones still work`() {
         val e = RegexExtractor.of(
             """

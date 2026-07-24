@@ -43,9 +43,7 @@ internal object DefaultExtractor : (String, String) -> AnalyticsEvent? {
         val close = msg.lastIndexOf('}')
         if (open in 0 until close) {
             val inner = msg.substring(open, close + 1)
-            val params = runCatching { JSONObject(inner).toMap() }.getOrNull()?.takeIf { it.isNotEmpty() }
-                ?: parseKeyValues(inner)
-            return AnalyticsEvent(nameBefore(msg, open, tag), params)
+            return AnalyticsEvent(nameBefore(msg, open, tag), parseParams(inner))
         }
 
         // 4. arrow-separated: `<verb> = <name> -> <payload>`  /  `<name> => <payload>`
@@ -84,6 +82,16 @@ internal object DefaultExtractor : (String, String) -> AnalyticsEvent? {
 private val KV = Regex("""([\w.]+)\s*=\s*(.*?)(?=,\s*[\w.]+\s*=|$)""")
 
 /**
+ * Params from a captured payload: real JSON if it parses to a non-empty object (many SDKs log the
+ * event's attributes as JSON), otherwise `key=value`. Shared by [DefaultExtractor] and the
+ * user-supplied [RegexExtractor] so a regex whose `params` group grabs a `{ ... }` object gets the
+ * same JSON handling as the built-in parser.
+ */
+internal fun parseParams(text: String): Map<String, Any?> =
+    runCatching { JSONObject(text.trim()).toMap() }.getOrNull()?.takeIf { it.isNotEmpty() }
+        ?: parseKeyValues(text)
+
+/**
  * Parses `key=value, k2=v2` into a map, tolerating wrapping braces/brackets and commas *inside*
  * values. Shared by [DefaultExtractor] and the user-supplied [RegexExtractor] `params` group.
  */
@@ -94,13 +102,21 @@ internal fun parseKeyValues(text: String): Map<String, Any?> {
 
 internal fun JSONObject.toMap(): Map<String, Any?> = buildMap {
     for (key in this@toMap.keys()) {
-        put(
-            key,
-            when (val value = this@toMap.opt(key)) {
-                is JSONObject, is JSONArray -> value.toString() // nested kept as text — deliberate
-                JSONObject.NULL -> null
-                else -> value
-            },
-        )
+        when (val value = this@toMap.opt(key)) {
+            JSONObject.NULL -> put(key, null)
+            is JSONObject, is JSONArray -> put(key, value.toString()) // nested kept as text — deliberate
+            // A string that is itself a JSON object = an SDK cramming a whole attribute set through
+            // one string field as (double-)escaped JSON (MoEngage's EVENT_ATTRS / EVENT_ATTRS_CUST is
+            // exactly this). Unwrap it so those attributes become their own rows, un-escaped, instead
+            // of one unreadable `{\"k\":v}` blob. Real nested objects above are still kept as text.
+            is String -> value.asJsonObject()?.let { putAll(it.toMap()) } ?: put(key, value)
+            else -> put(key, value)
+        }
     }
 }
+
+/** The string parsed as a non-empty JSON object, or null if it isn't one. */
+private fun String.asJsonObject(): JSONObject? =
+    takeIf { it.startsWith('{') }
+        ?.let { runCatching { JSONObject(it) }.getOrNull() }
+        ?.takeIf { it.length() > 0 }
