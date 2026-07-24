@@ -66,15 +66,15 @@ fun DemoScreen(modifier: Modifier = Modifier) {
 
         SectionTitle("Logs")
         DemoButton("Log one of each level") {
-            Log.v(TAG, "Verbose: fine-grained diagnostic message")
-            Log.d(TAG, "Debug: something happened worth debugging")
-            Log.i(TAG, "Info: app flow milestone reached")
-            Log.w(TAG, "Warning: something looks off")
-            Log.e(TAG, "Error: something actually failed")
-            Log.wtf(TAG, "WTF: this should never happen")
+            Log.v(TAG, "Verbose: entering the Matrix…")
+            Log.d(TAG, "Debug: it works on my machine")
+            Log.i(TAG, "Info: shipped to prod on a Friday")
+            Log.w(TAG, "Warning: here be dragons")
+            Log.e(TAG, "Error: task failed successfully")
+            Log.wtf(TAG, "WTF: 0.1 + 0.2 = 0.30000000000000004")
         }
         DemoButton("Log exception with stacktrace") {
-            Log.e(TAG, "Caught exception while doing demo work", RuntimeException("Demo failure cause"))
+            Log.e(TAG, "Rescued a panic while herding goroutines", RuntimeException("stack overflow at ${'$'}throw"))
         }
         DemoButton("Spam 500 logs") {
             repeat(500) { Log.d(TAG, "Spam log line #$it with some payload data") }
@@ -85,18 +85,21 @@ fun DemoScreen(modifier: Modifier = Modifier) {
 
         SectionTitle("Analytics (tag: Analytics)")
         DemoButton("JSON event") {
-            Log.d("Analytics", """purchase {"sku":"pro_upgrade","price":9.99,"currency":"USD"}""")
+            Log.d("Analytics", """achievement_unlocked {"name":"1000_commits","rarity":"legendary","xp":9001}""")
         }
         DemoButton("key=value event") {
-            Log.d("Analytics", "screen_view screen=Home, source=bottom_tab, session_count=42")
+            Log.d("Analytics", "coffee_brewed roast=dark, shots=2, blocker_resolved=true")
         }
         DemoButton("Bundle event") {
-            Log.d("Analytics", "add_to_cart Bundle[{item_id=42, item_name=Widget, quantity=2}]")
+            Log.d("Analytics", "boss_defeated Bundle[{boss=merge_conflict, weapon=git_rebase, attempts=42}]")
         }
 
         SectionTitle("Crashes")
         DemoButton("JVM crash") {
-            throw RuntimeException("LogSense demo crash — everything is working as intended")
+            throw IllegalStateException(
+                "Heisenbug: it only crashes when nobody is watching",
+                RuntimeException("the printer is on fire, and 0.1 + 0.2 != 0.3"),
+            )
         }
         DemoButton("ANR (tap repeatedly during freeze)") {
             Thread.sleep(20_000)

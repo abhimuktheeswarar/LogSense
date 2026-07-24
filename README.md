@@ -8,6 +8,17 @@ right on the device: a live color-coded log viewer, analytics events lifted out 
 structured, and crash reports that survive process death — all reachable from a notification or a separate
 launcher icon.
 
+## Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/logs.png" width="18%" alt="Live logs" />
+  <img src="docs/screenshots/events.png" width="18%" alt="Analytics events" />
+  <img src="docs/screenshots/event_detail.png" width="18%" alt="Event detail" />
+  <img src="docs/screenshots/crashes.png" width="18%" alt="Crashes" />
+  <img src="docs/screenshots/crash_detail.png" width="18%" alt="Crash detail" />
+</p>
+<p align="center"><sub>Live logcat &middot; analytics events &middot; event detail &middot; crashes &middot; crash detail</sub></p>
+
 ## Features
 
 - **Live log viewer** — an on-device Logcat: multiple tabs each with their own filter, per-tab play/pause,
