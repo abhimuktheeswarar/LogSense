@@ -1,5 +1,6 @@
 package com.msabhi.logsense.internal
 
+import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.os.Build
@@ -35,7 +36,12 @@ internal class LogSenseCore private constructor(
 ) {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    val buffer = LogBuffer(config.maxBufferedLines)
+
+    /** Effective in-memory buffer cap: the configured [LogSenseConfig.maxBufferedLines], but lowered
+     *  on low-RAM devices so LogSense never fills the host app's heap. Never raised above the config —
+     *  spare RAM is not a reason to buffer more. */
+    val bufferLimit = ramAwareBufferLimit(appContext, config.maxBufferedLines)
+    val buffer = LogBuffer(bufferLimit)
     val prefs = LogSensePrefs(appContext)
 
     /** Theme override; starts from the user's saved choice, else the config default. */
@@ -220,4 +226,26 @@ internal class LogSenseCore private constructor(
             }
         }
     }
+}
+
+/**
+ * Lowers the in-memory buffer cap on low-RAM devices. The buffer lives in the host app's heap, so
+ * having spare RAM is never a reason to buffer more — [configured] is the ceiling, and we only cut
+ * below it on constrained devices to avoid pressuring the host.
+ */
+private fun ramAwareBufferLimit(context: Context, configured: Int): Int {
+    val am = context.getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager ?: return configured
+    val ceiling = if (am.isLowRamDevice) {
+        10_000
+    } else {
+        val totalGb = runCatching {
+            ActivityManager.MemoryInfo().also(am::getMemoryInfo).totalMem / (1024.0 * 1024 * 1024)
+        }.getOrDefault(4.0)
+        when {
+            totalGb < 3 -> 20_000 // ~2GB devices
+            totalGb < 4 -> 35_000 // ~3GB devices
+            else -> configured // 4GB+ : keep the configured limit as-is (never more)
+        }
+    }
+    return configured.coerceAtMost(ceiling)
 }

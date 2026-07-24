@@ -29,6 +29,7 @@ import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -43,6 +44,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -72,7 +74,10 @@ import com.msabhi.logsense.internal.reader.LogLevel
 import com.msabhi.logsense.internal.search.SearchQuery
 import com.msabhi.logsense.internal.search.TextMatcher
 import com.msabhi.logsense.internal.ui.theme.color
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 @Composable
 internal fun LogsScreen(core: LogSenseCore) {
@@ -171,18 +176,32 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val bufferedWhilePaused = if (tab.paused) (liveEntries.size - (frozen?.size ?: 0)).coerceAtLeast(0) else 0
 
     val predicate = remember(tab.filter) { LogQuery.compile(tab.filter) }
-    val filtered = remember(entries, predicate) { entries.filter(predicate) }
-    val groups = remember(filtered) { groupRuns(filtered) }
-    val items = remember(groups) { flatten(groups) }
-    val tags = remember(entries) { entries.mapTo(sortedSetOf()) { it.tag }.toList() }
-
     var searchOpen by remember { mutableStateOf(false) }
     var search by remember { mutableStateOf(SearchQuery()) }
     val matcher = remember(search) { if (search.isActive) TextMatcher.from(search) else null }
-    val matchIndices = remember(filtered, matcher) {
-        if (matcher == null) emptyList()
-        else filtered.indices.filter { matcher.matches("${filtered[it].tag} ${filtered[it].message}") }
+
+    // Filtering, grouping, tag-extraction and find-matching over a large buffer (up to
+    // maxBufferedLines) is far too heavy for the main thread on every buffer flush (~10x/sec) — on
+    // slower devices that janks tab switches and typing, and it must never steal cycles from the host
+    // app. Do it all off the main thread, throttled while live so a busy log stream can't peg the CPU.
+    // Paused tabs compute their frozen view once. Nothing here keys a remember() on the big list, so
+    // the main thread never even does an O(n) structural comparison.
+    val view by produceState(LogView.EMPTY, predicate, matcher, frozen) {
+        val snap = frozen
+        if (snap != null) {
+            value = withContext(Dispatchers.Default) { LogView.of(snap, predicate, matcher) }
+        } else {
+            core.buffer.snapshot.collect { live ->
+                value = withContext(Dispatchers.Default) { LogView.of(live, predicate, matcher) }
+                delay(LOG_VIEW_THROTTLE_MS)
+            }
+        }
     }
+    val filtered = view.filtered
+    val groups = view.groups
+    val items = view.items
+    val tags = view.tags
+    val matchIndices = view.matchIndices
     var matchPos by remember(matcher) { mutableIntStateOf(0) }
 
     val listState = rememberLazyListState()
@@ -247,6 +266,11 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
 
         when {
             entries.isEmpty() -> EmptyLogs(core.appName)
+            // First derivation for this tab hasn't landed yet (only ever EMPTY before the first
+            // off-thread compute) — show a spinner rather than a false "nothing matches".
+            view === LogView.EMPTY -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
             filtered.isEmpty() -> NoMatches(tab.filter, onClear = { update { LogFilter() } })
             else -> LogList(groups, items, listState, tab.viewMode, logScroll, matcher, autoFollow = !tab.paused)
         }
@@ -288,6 +312,41 @@ private fun groupRuns(filtered: List<LogEntry>): List<LogGroup> {
 /** Flattens groups back to a band/line item stream (used by every mode except Scroll-entry). */
 private fun flatten(groups: List<LogGroup>): List<LogItem> =
     ArrayList<LogItem>().apply { groups.forEach { g -> add(g.band); addAll(g.lines) } }
+
+/** Max rate at which a live tab re-derives its view from the buffer (~5x/sec) — enough to feel live
+ *  without pegging the CPU when logs pour in. */
+private const val LOG_VIEW_THROTTLE_MS = 200L
+
+/** One tab's derived view of the buffer — filtered lines, their groups/items, and the tag set for
+ *  autocomplete. Built by [of] on a background dispatcher so the main thread never does the O(n) work. */
+private class LogView(
+    val filtered: List<LogEntry>,
+    val groups: List<LogGroup>,
+    val items: List<LogItem>,
+    val tags: List<String>,
+    val matchIndices: List<Int>,
+) {
+    companion object {
+        val EMPTY = LogView(emptyList(), emptyList(), emptyList(), emptyList(), emptyList())
+
+        fun of(entries: List<LogEntry>, predicate: (LogEntry) -> Boolean, matcher: TextMatcher?): LogView {
+            val filtered = entries.filter(predicate)
+            val groups = groupRuns(filtered)
+            val matchIndices = if (matcher == null) {
+                emptyList()
+            } else {
+                filtered.indices.filter { matcher.matches("${filtered[it].tag} ${filtered[it].message}") }
+            }
+            return LogView(
+                filtered = filtered,
+                groups = groups,
+                items = flatten(groups),
+                tags = entries.mapTo(sortedSetOf()) { it.tag }.toList(),
+                matchIndices = matchIndices,
+            )
+        }
+    }
+}
 
 /** `tag:value` (quoted if it has spaces), appended to the current query. */
 private fun withTag(query: String, tag: String): String {

@@ -37,8 +37,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.3.6")
-    releaseImplementation("com.msabhi:logsense-no-op:0.3.6")
+    debugImplementation("com.msabhi:logsense:0.3.7")
+    releaseImplementation("com.msabhi:logsense-no-op:0.3.7")
 }
 ```
 
@@ -65,7 +65,7 @@ LogSense.init(
     LogSenseConfig(
         analyticsTags = emptySet(),      // tags whose lines are analytics events
         analyticsExtractor = null,       // custom (tag, message) -> AnalyticsEvent?; null = built-in parser
-        maxBufferedLines = 50_000,       // in-memory log ring buffer size
+        maxBufferedLines = 50_000,       // in-memory log ring buffer size (auto-reduced on low-RAM devices)
         captureJvmCrashes = true,        // install a chaining uncaught-exception handler; false = leave it to your reporter
         crashContextLines = 200,         // log lines attached to each crash report
         retentionDays = 7,               // stored events/crashes older than this are trimmed

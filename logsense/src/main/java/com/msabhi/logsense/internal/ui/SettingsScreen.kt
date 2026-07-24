@@ -122,11 +122,11 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                     icon = LogSenseIcons.Lines,
                     iconTint = LogLevel.DEBUG.color(),
                     title = "Log buffer limit",
-                    subtitle = "Oldest lines drop once the buffer is full. Configured in code.",
+                    subtitle = "Oldest lines drop once the buffer is full. Auto-reduced on low-RAM devices.",
                 ) {
                     Column(horizontalAlignment = Alignment.End) {
                         Text(
-                            "%,d".format(core.config.maxBufferedLines),
+                            "%,d".format(core.bufferLimit),
                             style = MaterialTheme.typography.titleMedium.copy(fontFamily = FontFamily.Monospace),
                             color = cs.onSurface,
                         )
@@ -156,8 +156,10 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                         ) { Text(label) }
                     }
                 }
+
+                // Footer scrolls with the content (no longer pinned) now that Settings has grown.
+                AboutFooter()
             }
-            AboutFooter()
         }
     }
 }
