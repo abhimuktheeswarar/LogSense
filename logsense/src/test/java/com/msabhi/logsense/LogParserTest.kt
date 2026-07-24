@@ -27,6 +27,15 @@ class LogParserTest {
     }
 
     @Test
+    fun `tag with spaces, and a colon inside the message`() {
+        val entry = parser.parse("1784000000.842  9135  9135 I APP ... METRICS: GA -> ab_test_foo : Bundle[{lang=en}]")
+        assertNotNull(entry)
+        entry!!
+        assertEquals("APP ... METRICS", entry.tag) // spaces preserved, not truncated at first space
+        assertEquals("GA -> ab_test_foo : Bundle[{lang=en}]", entry.message) // colon in message doesn't leak into tag
+    }
+
+    @Test
     fun `parses all levels`() {
         for ((letter, level) in mapOf(
             "V" to LogLevel.VERBOSE, "D" to LogLevel.DEBUG, "I" to LogLevel.INFO,

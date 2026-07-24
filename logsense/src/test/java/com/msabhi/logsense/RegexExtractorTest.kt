@@ -50,4 +50,32 @@ class RegexExtractorTest {
         val e = RegexExtractor.of("""foo=(?<params>.*)""")!!
         assertNull(e("Tag", "foo=a=1, b=2"))
     }
+
+    @Test
+    fun `multiple patterns are tried in order, first match wins`() {
+        val e = RegexExtractor.of(
+            """
+            (?<name>\w+)\s*->\s*\{(?<params>.*)\}
+            GA -> (?<name>\w+)
+            """.trimIndent(),
+        )!!
+        // matches line 1
+        assertEquals("purchase", e("T", "purchase -> {a=1}")!!.name)
+        // no braces -> falls to line 2
+        assertEquals("home_view", e("T", "GA -> home_view")!!.name)
+        // matches neither
+        assertNull(e("T", "unrelated log"))
+    }
+
+    @Test
+    fun `blank and invalid lines are skipped, valid ones still work`() {
+        val e = RegexExtractor.of(
+            """
+            (?<name>
+
+            EV:(?<name>\w+)
+            """.trimIndent(),
+        )!! // first line is an invalid regex, second blank, third valid
+        assertEquals("app_open", e("T", "EV:app_open")!!.name)
+    }
 }

@@ -104,7 +104,11 @@ internal fun EventsScreen(
     var showDeleteAll by remember { mutableStateOf(false) }
     val selectionMode = checked.isNotEmpty()
 
-    val tags = remember(events) { (core.config.analyticsTags + events.map { it.tag }).toSortedSet().toList() }
+    val userTags by core.prefs.eventTags.collectAsState()
+    val tags = remember(events, userTags) {
+        val extra = userTags.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }
+        (core.config.analyticsTags + extra + events.map { it.tag }).toSortedSet().toList()
+    }
 
     val filtered = remember(events, selectedTag, filterText, pending.toList()) {
         events.filter { e ->
@@ -389,8 +393,20 @@ private fun EventRow(
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
             Text(highlight(event.name, matcher, highlightColor), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(event.timestamp.asDateTime(), style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace), color = cs.onSurfaceVariant)
-                Text(event.tag, style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace), color = cs.onSurfaceVariant)
+                Text(
+                    event.timestamp.asDateTime(),
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = cs.onSurfaceVariant,
+                    maxLines = 1,
+                )
+                Text(
+                    event.tag,
+                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                    color = cs.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
             }
             if (preview.isNotEmpty()) {
                 Text(preview, style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace), maxLines = 1, overflow = TextOverflow.Ellipsis, color = cs.onSurfaceVariant)

@@ -1,5 +1,11 @@
 package com.msabhi.logsense.internal.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -33,11 +39,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.msabhi.logsense.R
 import com.msabhi.logsense.internal.LogSenseCore
+import com.msabhi.logsense.internal.reader.LogLevel
 import com.msabhi.logsense.internal.ui.theme.LogSenseTheme
+import com.msabhi.logsense.internal.ui.theme.color
 import com.msabhi.logsense.internal.ui.theme.liveColor
 import kotlinx.coroutines.launch
 
@@ -70,6 +79,8 @@ internal fun LogSenseApp(
     core: LogSenseCore,
     pendingCrashId: Long?,
     onCrashIdConsumed: () -> Unit,
+    openCrashes: Boolean = false,
+    onOpenCrashesConsumed: () -> Unit = {},
 ) {
     val themeMode by core.themeMode.collectAsState()
     val levelColors by core.prefs.levelColors.collectAsState()
@@ -83,6 +94,16 @@ internal fun LogSenseApp(
                 tab = 2
                 detail = Detail.Crash(pendingCrashId)
                 onCrashIdConsumed()
+            }
+        }
+
+        // Immediate crash alert (no row yet): just land on the Crashes list.
+        LaunchedEffect(openCrashes) {
+            if (openCrashes) {
+                tab = 2
+                detail = null
+                showSettings = false
+                onOpenCrashesConsumed()
             }
         }
 
@@ -108,21 +129,39 @@ internal fun LogSenseApp(
 
 @Composable
 private fun LivePill(capturing: Boolean, count: Int) {
-    val live = liveColor()
-    val onVar = MaterialTheme.colorScheme.onSurfaceVariant
-    val dotColor = if (capturing) live else onVar
+    // Green while live, red (the severity error color) when paused.
+    val color = if (capturing) liveColor() else LogLevel.ERROR.color()
     val label = when {
         !capturing -> "PAUSED · ${formatCount(count)}"
         count == 0 -> "CONNECTING"
         else -> "LIVE · ${formatCount(count)}"
     }
+    // Breathing pulse via size — the dot stays fully solid (same vibrant green), only scaling in/out;
+    // steady when paused.
+    val pulse = rememberInfiniteTransition(label = "live")
+    val scale by pulse.animateFloat(
+        initialValue = 1f,
+        targetValue = 1.35f,
+        animationSpec = infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse),
+        label = "dotScale",
+    )
     Row(verticalAlignment = Alignment.CenterVertically) {
-        Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor))
+        Box(
+            Modifier
+                .size(7.dp)
+                .graphicsLayer {
+                    val s = if (capturing) scale else 1f
+                    scaleX = s
+                    scaleY = s
+                }
+                .clip(CircleShape)
+                .background(color),
+        )
         Spacer(Modifier.width(5.dp))
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = if (capturing) live else onVar,
+            color = color,
         )
     }
 }
@@ -143,7 +182,7 @@ private fun TabsScaffold(
             TopAppBar(
                 title = {
                     val capturing by core.captureEnabled.collectAsState()
-                    val entries by core.buffer.snapshot.collectAsState()
+                    val total by core.buffer.totalReceived.collectAsState()
                     Column {
                         Text(
                             text = core.appName,
@@ -158,7 +197,7 @@ private fun TabsScaffold(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(Modifier.width(8.dp))
-                            LivePill(capturing = capturing, count = entries.size)
+                            LivePill(capturing = capturing, count = total)
                         }
                     }
                 },

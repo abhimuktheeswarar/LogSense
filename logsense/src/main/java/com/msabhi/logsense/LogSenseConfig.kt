@@ -14,7 +14,7 @@ public class LogSenseConfig(
      */
     public val analyticsExtractor: ((tag: String, message: String) -> AnalyticsEvent?)? = null,
     /** Max log lines kept in the in-memory buffer. */
-    public val maxBufferedLines: Int = 15_000,
+    public val maxBufferedLines: Int = 50_000,
     /**
      * Whether LogSense installs a `Thread.UncaughtExceptionHandler` to capture JVM crashes.
      * It always **chains to any handler already installed**, so your existing crash reporter

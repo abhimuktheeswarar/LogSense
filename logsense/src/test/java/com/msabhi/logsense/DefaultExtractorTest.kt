@@ -92,6 +92,14 @@ class DefaultExtractorTest {
     }
 
     @Test
+    fun `arrow then bundle - name is the identifier before the payload`() {
+        val event = DefaultExtractor("Telemetry", "GA -> ab_test_foo : Bundle[{lang=en, screen=Home}]")
+        assertEquals("ab_test_foo", event.name) // "GA ->" prefix skipped
+        assertEquals("en", event.params["lang"])
+        assertEquals("Home", event.params["screen"])
+    }
+
+    @Test
     fun `arrow without braces`() {
         val event = DefaultExtractor("Telemetry", "GA -> screen=Splash, source=deeplink")
         assertEquals("Splash", event.params["screen"])

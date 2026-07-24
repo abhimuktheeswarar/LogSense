@@ -26,9 +26,18 @@ internal class LogSensePrefs(context: Context) {
         sp.getString(KEY_LOG_SCROLL, null)?.let { runCatching { LogScroll.valueOf(it) }.getOrNull() } ?: LogScroll.ENTRY,
     )
 
-    /** Whether events/crashes from earlier app runs are retained (default true). */
-    val keepPastEvents = MutableStateFlow(sp.getBoolean(KEY_KEEP_EVENTS, true))
+    /** Whether events/crashes from earlier app runs are retained. Crashes default on (you rarely
+     *  want to miss one); events default off (they're high-volume and usually only this run matters). */
+    val keepPastEvents = MutableStateFlow(sp.getBoolean(KEY_KEEP_EVENTS, false))
     val keepPastCrashes = MutableStateFlow(sp.getBoolean(KEY_KEEP_CRASHES, true))
+
+    /** Extra logcat tags (Settings, one per line) to treat as analytics events, merged with config. */
+    val eventTags = MutableStateFlow(sp.getString(KEY_EVENT_TAGS, "").orEmpty())
+
+    fun setEventTags(tags: String) {
+        eventTags.value = tags
+        sp.edit().putString(KEY_EVENT_TAGS, tags).apply()
+    }
 
     /** Optional user-defined regex (Settings) for parsing events; empty = use the built-in parser. */
     val eventPattern = MutableStateFlow(sp.getString(KEY_EVENT_PATTERN, "").orEmpty())
@@ -93,6 +102,7 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_LOG_SCROLL = "log_scroll"
         private const val KEY_KEEP_EVENTS = "keep_past_events"
         private const val KEY_KEEP_CRASHES = "keep_past_crashes"
+        private const val KEY_EVENT_TAGS = "event_tags"
         private const val KEY_EVENT_PATTERN = "event_pattern"
         val DEFAULT_TAB = LogTab(id = 0, name = "All")
     }

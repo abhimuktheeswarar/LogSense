@@ -28,9 +28,19 @@ internal class RegexExtractor(private val regex: Regex) : (String, String) -> An
         runCatching { (match.groups as? MatchNamedGroupCollection)?.get(name)?.value }.getOrNull()
 
     companion object {
-        /** Compiles [pattern]; returns null when blank or not a valid regex, so callers can fall back. */
-        fun of(pattern: String): RegexExtractor? =
-            pattern.trim().takeIf { it.isNotEmpty() }
-                ?.let { p -> runCatching { RegexExtractor(Regex(p)) }.getOrNull() }
+        /**
+         * Builds an extractor from newline-separated [patterns] — each non-blank line is one regex,
+         * tried in order (first match wins), so multiple log formats can be handled at once. Invalid
+         * lines are skipped; returns null when no usable pattern remains, so callers can fall back.
+         */
+        fun of(patterns: String): ((String, String) -> AnalyticsEvent?)? {
+            val extractors = patterns.lineSequence()
+                .map(String::trim)
+                .filter(String::isNotEmpty)
+                .mapNotNull { line -> runCatching { RegexExtractor(Regex(line)) }.getOrNull() }
+                .toList()
+            if (extractors.isEmpty()) return null
+            return { tag, message -> extractors.firstNotNullOfOrNull { it(tag, message) } }
+        }
     }
 }

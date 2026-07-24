@@ -21,6 +21,10 @@ internal object Notifications {
     // one crash notification (plus the ongoing capture one), never a pile that grows per crash.
     private const val ID_CRASH = 0x10906E
 
+    // Reserved requestCode for the "open Crashes tab" launch intent — large enough never to
+    // collide with a crash row id or the capture launch intent (requestCode 0).
+    private const val RC_OPEN_CRASHES = ID_CRASH
+
     const val ACTION_PAUSE = "com.msabhi.logsense.action.PAUSE"
     const val ACTION_RESUME = "com.msabhi.logsense.action.RESUME"
     const val ACTION_SHARE_CRASH = "com.msabhi.logsense.action.SHARE_CRASH"
@@ -68,6 +72,25 @@ internal object Notifications {
         )
     }
 
+    /**
+     * Best-effort crash alert posted from the crashing process itself, so it shows immediately
+     * rather than only on next launch. It has no deep link yet (the row isn't ingested); tapping
+     * opens the Crashes tab, and the next launch replaces it via [postCrash] with a real deep link.
+     */
+    fun postCrashAlert(context: Context, title: String, text: String) {
+        createChannels(context) // idempotent; channel may not exist yet if init hasn't finished
+        val notification = NotificationCompat.Builder(context, CHANNEL_CRASH)
+            .setSmallIcon(R.drawable.logsense_ic_notification)
+            .setContentTitle(title)
+            .setContentText(text)
+            .setSubText(context.getString(R.string.logsense_name))
+            .setAutoCancel(true)
+            .setLocalOnly(true)
+            .setContentIntent(launchPendingIntent(context, crashId = null, openCrashes = true))
+            .build()
+        notify(context, ID_CRASH, notification)
+    }
+
     fun postCrash(context: Context, crashId: Long, title: String, text: String) {
         val notification = NotificationCompat.Builder(context, CHANNEL_CRASH)
             .setSmallIcon(R.drawable.logsense_ic_notification)
@@ -98,13 +121,14 @@ internal object Notifications {
         context.applicationInfo.loadLabel(context.packageManager).toString()
     }.getOrDefault(context.packageName)
 
-    private fun launchPendingIntent(context: Context, crashId: Long?): PendingIntent {
+    private fun launchPendingIntent(context: Context, crashId: Long?, openCrashes: Boolean = false): PendingIntent {
         val intent = Intent(context, LogSenseActivity::class.java)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         crashId?.let { intent.putExtra(LogSenseActivity.EXTRA_CRASH_ID, it) }
+        if (openCrashes) intent.putExtra(LogSenseActivity.EXTRA_OPEN_CRASHES, true)
         return PendingIntent.getActivity(
             context,
-            crashId?.toInt() ?: 0,
+            crashId?.toInt() ?: if (openCrashes) RC_OPEN_CRASHES else 0,
             intent,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

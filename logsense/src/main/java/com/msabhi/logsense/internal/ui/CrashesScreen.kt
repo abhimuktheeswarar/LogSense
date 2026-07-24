@@ -3,6 +3,7 @@ package com.msabhi.logsense.internal.ui
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -36,6 +37,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -79,11 +81,25 @@ internal fun CrashesScreen(
     val checked = remember { mutableStateListOf<Long>() }
     val pending = remember { mutableStateListOf<Long>() }
     var showDeleteAll by remember { mutableStateOf(false) }
+    var filterText by rememberSaveable { mutableStateOf("") }
     val selectionMode = checked.isNotEmpty()
 
     val visible = remember(crashes, pending.toList()) { crashes.filter { it.id !in pending } }
-    val groups = remember(visible, sessions, core.sessionId) {
-        groupBySession(visible, core.sessionId, { startedAt[it] ?: 0L }, { it.sessionId }, { it.timestamp })
+    val filtered = remember(visible, filterText) {
+        if (filterText.isBlank()) {
+            visible
+        } else {
+            visible.filter { c ->
+                c.type.contains(filterText, true) ||
+                    c.exceptionClass?.contains(filterText, true) == true ||
+                    c.message?.contains(filterText, true) == true ||
+                    c.threadName?.contains(filterText, true) == true ||
+                    c.stacktrace.contains(filterText, true)
+            }
+        }
+    }
+    val groups = remember(filtered, sessions, core.sessionId) {
+        groupBySession(filtered, core.sessionId, { startedAt[it] ?: 0L }, { it.sessionId }, { it.timestamp })
     }
     val listItems = remember(groups) {
         buildList { groups.forEach { (m, rows) -> add(CrashListItem.Header(m, rows.map { it.id })); rows.forEach { add(CrashListItem.Row(it)) } } }
@@ -110,18 +126,19 @@ internal fun CrashesScreen(
                         onClose = { checked.clear() },
                         onExport = null,
                         onDelete = { val ids = checked.toList(); checked.clear(); deleteWithUndo(ids) },
-                        onSelectAll = { checked.clear(); checked.addAll(visible.map { it.id }) },
+                        onSelectAll = { checked.clear(); checked.addAll(filtered.map { it.id }) },
                     )
-                } else {
+                } else if (visible.isNotEmpty()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 4.dp, top = 8.dp, bottom = 6.dp),
                         verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        Text(
-                            "${visible.size} crash report(s)",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.weight(1f).padding(start = 8.dp),
+                        FilledFilterField(
+                            value = filterText,
+                            onValueChange = { filterText = it },
+                            placeholder = "Filter crashes by type, class or message",
+                            modifier = Modifier.weight(1f),
                         )
                         IconButton(onClick = { showDeleteAll = true }, enabled = visible.isNotEmpty()) {
                             Icon(LogSenseIcons.Delete, contentDescription = "Delete all crashes")
@@ -131,6 +148,8 @@ internal fun CrashesScreen(
 
                 if (visible.isEmpty()) {
                     CrashEmpty()
+                } else if (filtered.isEmpty()) {
+                    CrashNoMatches(filterText) { filterText = "" }
                 } else {
                     LazyColumn(Modifier.fillMaxSize()) {
                         items(listItems, key = { it.key }) { item ->
@@ -200,6 +219,26 @@ private fun CrashEmpty() {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(32.dp),
         )
+    }
+}
+
+@Composable
+private fun CrashNoMatches(query: String, onClear: () -> Unit) {
+    Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Text(
+            "No crashes match \"$query\".",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 32.dp),
+        )
+        Spacer(Modifier.size(14.dp))
+        Row(
+            modifier = Modifier
+                .clip(RoundedCornerShape(50))
+                .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(50))
+                .clickable(onClick = onClear)
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+        ) { Text("Clear filter", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary) }
     }
 }
 

@@ -67,12 +67,28 @@ internal class LogSenseCore private constructor(
         // Crash handler first — nothing that runs later may crash uncaptured. Opt-out via config;
         // it always chains to the previously-installed handler, so the app's reporter still runs.
         if (config.captureJvmCrashes) {
-            CrashHandler(crashStore, config.crashContextLines, buffer).install()
+            CrashHandler(appContext, crashStore, config.crashContextLines, buffer).install()
         }
         Notifications.createChannels(appContext)
 
-        detector = AnalyticsDetector(config, { database.eventDao() }, scope, sessionId, eventPattern = { prefs.eventPattern.value })
+        detector = AnalyticsDetector(
+            config,
+            { database.eventDao() },
+            scope,
+            sessionId,
+            eventPattern = { prefs.eventPattern.value },
+            extraTags = { prefs.eventTags.value.lineSequence().map { it.trim() }.filter { it.isNotEmpty() }.toSet() },
+        )
         startReader()
+
+        // Publish buffered lines to observers at a bounded rate — the reader keeps ingesting every
+        // batch, but the UI re-renders at most ~10×/sec instead of once per batch under heavy logging.
+        scope.launch {
+            while (isActive) {
+                delay(BUFFER_FLUSH_MS)
+                buffer.flush()
+            }
+        }
 
         scope.launch {
             val sessionDao = database.sessionDao()
@@ -111,7 +127,12 @@ internal class LogSenseCore private constructor(
             val keep = sessionDao.recentIds(config.maxSessions)
             if (keep.isNotEmpty()) {
                 database.eventDao().deleteNotInSessions(if (prefs.keepPastEvents.value) keep else listOf(sessionId))
-                crashDao.deleteNotInSessions(if (prefs.keepPastCrashes.value) keep else listOf(sessionId))
+                // A JVM crash is always ingested into the *next* run, so it looks like a "previous
+                // session" even though it's the crash we just surfaced. Never let this launch's
+                // retention delete the crashes it just ingested, whatever keepPastCrashes says.
+                val crashKeep = (if (prefs.keepPastCrashes.value) keep else listOf(sessionId)) +
+                    ingested.map { it.sessionId }
+                crashDao.deleteNotInSessions(crashKeep.distinct())
                 sessionDao.deleteNotIn(keep)
             }
 
@@ -125,7 +146,7 @@ internal class LogSenseCore private constructor(
                 while (isActive) {
                     delay(NOTIFICATION_REFRESH_MS)
                     if (!captureEnabled.value) continue
-                    val count = buffer.currentSnapshot().size
+                    val count = buffer.totalReceived.value
                     if (count != last) {
                         Notifications.postCapture(appContext, paused = false, count = count)
                         last = count
@@ -154,7 +175,7 @@ internal class LogSenseCore private constructor(
     fun setCaptureEnabled(enabled: Boolean) {
         captureEnabled.value = enabled
         if (config.showNotification) {
-            Notifications.postCapture(appContext, paused = !enabled, count = buffer.currentSnapshot().size)
+            Notifications.postCapture(appContext, paused = !enabled, count = buffer.totalReceived.value)
         }
     }
 
@@ -177,6 +198,7 @@ internal class LogSenseCore private constructor(
 
     companion object {
         private const val NOTIFICATION_REFRESH_MS = 4_000L
+        private const val BUFFER_FLUSH_MS = 100L
 
         @Volatile
         var instance: LogSenseCore? = null

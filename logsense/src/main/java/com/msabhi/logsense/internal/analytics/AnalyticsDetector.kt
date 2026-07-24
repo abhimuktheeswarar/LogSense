@@ -16,29 +16,32 @@ internal class AnalyticsDetector(
     private val scope: CoroutineScope,
     private val sessionId: String,
     private val eventPattern: () -> String = { "" },
+    private val extraTags: () -> Set<String> = { emptySet() },
 ) {
 
     // Precedence: a code-level analyticsExtractor wins; else the user's Settings regex (recompiled
     // only when it changes); else the built-in DefaultExtractor.
     private val configExtractor = config.analyticsExtractor
     private var cachedPattern: String? = null
-    private var cachedRegex: RegexExtractor? = null
+    private var cachedExtractor: ((String, String) -> AnalyticsEvent?)? = null
 
     private fun extractor(): (String, String) -> AnalyticsEvent? {
         configExtractor?.let { return it }
         val pattern = eventPattern()
         if (pattern != cachedPattern) {
             cachedPattern = pattern
-            cachedRegex = RegexExtractor.of(pattern)
+            cachedExtractor = RegexExtractor.of(pattern)
         }
-        return cachedRegex ?: DefaultExtractor
+        return cachedExtractor ?: DefaultExtractor
     }
 
     fun process(batch: List<LogEntry>) {
-        if (config.analyticsTags.isEmpty()) return
+        // Tags from code config plus any the user added in Settings (evaluated live).
+        val tags = config.analyticsTags + extraTags()
+        if (tags.isEmpty()) return
         val extractor = extractor()
         val entities = batch.mapNotNull { entry ->
-            if (entry.tag !in config.analyticsTags) return@mapNotNull null
+            if (entry.tag !in tags) return@mapNotNull null
             val event = runCatching { extractor(entry.tag, entry.message) }.getOrNull() ?: return@mapNotNull null
             EventEntity(
                 timestamp = entry.timeMs,

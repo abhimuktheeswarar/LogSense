@@ -25,11 +25,13 @@ import com.msabhi.logsense.internal.ui.theme.LogSenseTheme
 internal class LogSenseActivity : ComponentActivity() {
 
     private var pendingCrashId by mutableStateOf<Long?>(null)
+    private var openCrashes by mutableStateOf(false)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         pendingCrashId = intent.crashId
+        openCrashes = intent.openCrashes
         setContent {
             val core = LogSenseCore.instance
             if (core == null) {
@@ -39,6 +41,8 @@ internal class LogSenseActivity : ComponentActivity() {
                     core = core,
                     pendingCrashId = pendingCrashId,
                     onCrashIdConsumed = { pendingCrashId = null },
+                    openCrashes = openCrashes,
+                    onOpenCrashesConsumed = { openCrashes = false },
                 )
             }
         }
@@ -47,13 +51,18 @@ internal class LogSenseActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         pendingCrashId = intent.crashId
+        openCrashes = intent.openCrashes
     }
 
     private val Intent.crashId: Long?
         get() = getLongExtra(EXTRA_CRASH_ID, -1L).takeIf { it >= 0 }
 
+    private val Intent.openCrashes: Boolean
+        get() = getBooleanExtra(EXTRA_OPEN_CRASHES, false)
+
     companion object {
         const val EXTRA_CRASH_ID = "com.msabhi.logsense.EXTRA_CRASH_ID"
+        const val EXTRA_OPEN_CRASHES = "com.msabhi.logsense.EXTRA_OPEN_CRASHES"
     }
 }
 

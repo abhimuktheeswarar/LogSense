@@ -22,7 +22,8 @@ launcher icon.
   `name k=v, k2=v2` formats, or plug in your own extractor). Per-tag tabs, live keyword filter, the same find
   bar, and export one / selected / all events as JSON (text or file).
 - **Crash capture** — an uncaught-exception handler writes the stacktrace, device info and the last ~200
-  log lines to disk *before* the process dies, then surfaces a notification on next launch. ANRs and native
+  log lines to disk *before* the process dies, and posts a crash notification immediately (best-effort, from
+  the crashing process) — tapping it opens the report once it's ingested on the next launch. ANRs and native
   crashes are picked up via `ApplicationExitInfo` (API 30+).
 - **Sessions & deletion** — events and crashes survive process death, grouped by the run (session) that
   produced them, current run first. Swipe a row to delete with an undo snackbar, long-press to multi-select,
@@ -36,8 +37,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.3.4")
-    releaseImplementation("com.msabhi:logsense-no-op:0.3.4")
+    debugImplementation("com.msabhi:logsense:0.3.5")
+    releaseImplementation("com.msabhi:logsense-no-op:0.3.5")
 }
 ```
 
@@ -64,7 +65,7 @@ LogSense.init(
     LogSenseConfig(
         analyticsTags = emptySet(),      // tags whose lines are analytics events
         analyticsExtractor = null,       // custom (tag, message) -> AnalyticsEvent?; null = built-in parser
-        maxBufferedLines = 15_000,       // in-memory log ring buffer size
+        maxBufferedLines = 50_000,       // in-memory log ring buffer size
         captureJvmCrashes = true,        // install a chaining uncaught-exception handler; false = leave it to your reporter
         crashContextLines = 200,         // log lines attached to each crash report
         retentionDays = 7,               // stored events/crashes older than this are trimmed
