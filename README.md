@@ -62,6 +62,8 @@ dependencies {
 class MyApp : Application() {
     override fun onCreate() {
         super.onCreate()
+        // Capture the "Analytics" tag; null = parse it with the built-in parser. Give a tag a regex
+        // (with (?<name>…) / optional (?<params>…) groups) instead of null for SDKs the parser can't infer.
         LogSense.init(this, LogSenseConfig(analyticsTagPatterns = mapOf("Analytics" to null)))
     }
 }
