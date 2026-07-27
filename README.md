@@ -44,7 +44,8 @@ launcher icon.
   clipped in the list, and the part naming the culprit is usually the clipped part. Tap a crash signal to open
   its report. Conditions the app's own logcat can't show — force-stop, kill by signal, low-memory kill, first
   frame — are read from `ApplicationExitInfo` and the activity lifecycle instead of scraped from a log line,
-  so they need no permission and carry a real cold-start number. Mute any built-in from the tab or Settings;
+  so they need no permission and carry a real cold-start number. Three routine ones — process start, activity start, heap clamp — ship muted so a healthy run flags
+  nothing; they and any other built-in can be toggled from the tab or Settings.
   add your own with `customSignals`, using the same query syntax as the filter field.
 - **Crash triage** — every crash report opens with the topmost stack frame that belongs to *your* code
   rather than the framework, lifted out of a trace that is mostly framework noise — plus a note when the
@@ -65,8 +66,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.5.1")
-    releaseImplementation("com.msabhi:logsense-no-op:0.5.1")
+    debugImplementation("com.msabhi:logsense:0.5.2")
+    releaseImplementation("com.msabhi:logsense-no-op:0.5.2")
 }
 ```
 

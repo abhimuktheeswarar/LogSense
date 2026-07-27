@@ -128,6 +128,19 @@ internal object BuiltInSignals {
         FIRST_FRAME,
     )
 
+    /**
+     * Signals that are off until someone asks for them. Each fires on a healthy run — a process
+     * starting, an activity coming up, ART tuning its heap — so leaving them on meant the Signals
+     * tab was never empty and its count never read zero, which teaches you to ignore the count. Off
+     * by default, the badge means "something happened"; they are one switch away in Settings for
+     * anyone who wants run boundaries interleaved with the faults.
+     */
+    val MUTED_BY_DEFAULT: Set<String> = setOf(
+        ACTIVITY_START.id,
+        "lifecycle.process_start",
+        "memory.clamp_heap",
+    )
+
     /** Built-ins plus the host's `customSignals`. Custom rules go first so they win a shared line. */
     fun catalog(custom: Map<String, String>): List<Signal> =
         custom.map { (label, query) -> Signal("custom.$label", label, SignalCategory.CUSTOM, query) } + CATALOG

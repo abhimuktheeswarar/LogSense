@@ -209,6 +209,27 @@ class SignalDetectorTest {
     }
 
     @Test
+    fun `every default-muted id exists in the catalog`() {
+        // A typo here would silently mute nothing, and the noisy signal would still fire.
+        val ids = com.msabhi.logsense.internal.signals.BuiltInSignals.CATALOG.map { it.id }.toSet()
+        val defaults = com.msabhi.logsense.internal.signals.BuiltInSignals.MUTED_BY_DEFAULT
+        assertTrue("unknown ids: ${defaults - ids}", ids.containsAll(defaults))
+        assertTrue(defaults.isNotEmpty())
+    }
+
+    @Test
+    fun `the signals muted by default are the ones that fire on a healthy run`() {
+        val d = detector(muted = com.msabhi.logsense.internal.signals.BuiltInSignals.MUTED_BY_DEFAULT)
+        d.process(
+            listOf(
+                entry("om.msabhi.lsapp", "Late-enabling -Xcheck:jni"),
+                entry("art", "Clamp target GC heap from 100MB to 200MB"),
+            ),
+        )
+        assertTrue("a healthy run should flag nothing", d.hits.value.isEmpty())
+    }
+
+    @Test
     fun `built-in ids are unique`() {
         val ids = com.msabhi.logsense.internal.signals.BuiltInSignals.CATALOG.map { it.id }
         assertEquals(ids.size, ids.toSet().size)

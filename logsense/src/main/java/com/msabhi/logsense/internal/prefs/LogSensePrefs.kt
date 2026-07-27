@@ -8,6 +8,7 @@ import com.msabhi.logsense.internal.logs.DEFAULT_TAB_ID
 import com.msabhi.logsense.internal.logs.LogScroll
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.reader.LogLevel
+import com.msabhi.logsense.internal.signals.BuiltInSignals
 import kotlinx.coroutines.flow.MutableStateFlow
 import org.json.JSONObject
 
@@ -37,9 +38,26 @@ internal class LogSensePrefs(context: Context) {
      *  Merged with config's tags, which are authoritative and can't be edited here. */
     val tagPatterns = MutableStateFlow(loadTagPatterns())
 
-    /** Ids of signals the user switched off in Settings. Muted signals stop matching entirely, so a
-     *  noisy built-in costs nothing once it's off. */
-    val mutedSignals = MutableStateFlow(sp.getStringSet(KEY_MUTED_SIGNALS, null).orEmpty())
+    /** Ids of signals switched off. Muted signals stop matching entirely, so a noisy built-in costs
+     *  nothing once it's off. Seeded on first run with [BuiltInSignals.MUTED_BY_DEFAULT]. */
+    val mutedSignals = MutableStateFlow(loadMutedSignals())
+
+    /**
+     * The defaults are seeded exactly once, tracked by its own flag rather than by "is the set
+     * empty". Without that, switching every default-off signal back on would look identical to a
+     * fresh install, and the next launch would silently mute them again.
+     */
+    private fun loadMutedSignals(): Set<String> {
+        if (sp.getBoolean(KEY_MUTED_SEEDED, false)) {
+            return sp.getStringSet(KEY_MUTED_SIGNALS, null).orEmpty()
+        }
+        val seeded = sp.getStringSet(KEY_MUTED_SIGNALS, null).orEmpty() + BuiltInSignals.MUTED_BY_DEFAULT
+        sp.edit()
+            .putStringSet(KEY_MUTED_SIGNALS, seeded)
+            .putBoolean(KEY_MUTED_SEEDED, true)
+            .apply()
+        return seeded
+    }
 
     fun setSignalMuted(id: String, muted: Boolean) {
         val updated = if (muted) mutedSignals.value + id else mutedSignals.value - id
@@ -116,6 +134,7 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_KEEP_CRASHES = "keep_past_crashes"
         private const val KEY_TAG_PATTERNS = "tag_patterns"
         private const val KEY_MUTED_SIGNALS = "muted_signals"
+        private const val KEY_MUTED_SEEDED = "muted_signals_seeded"
         val DEFAULT_TAB = LogTab(id = DEFAULT_TAB_ID, name = "All")
     }
 }
