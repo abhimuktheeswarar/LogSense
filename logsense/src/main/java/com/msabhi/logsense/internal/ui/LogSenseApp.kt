@@ -25,8 +25,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.ScrollableTabRow
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
@@ -172,6 +172,24 @@ private fun CrashLoadingScreen(onCancel: () -> Unit) {
     }
 }
 
+/**
+ * A tab label with a count beside it. Deliberately a tinted number rather than a filled badge: a
+ * TabRow splits the width equally — about 96dp a tab on a phone — and a chip's padding doesn't fit
+ * next to "Signals", while BadgedBox anchors to the content corner and so sits *on* the word.
+ */
+@Composable
+private fun TabLabelWithCount(title: String, count: Int) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(title)
+        Spacer(Modifier.width(5.dp))
+        Text(
+            text = formatCount(count),
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.primary,
+        )
+    }
+}
+
 @Composable
 private fun LivePill(capturing: Boolean, count: Int) {
     // Green while live, red (the severity error color) when paused.
@@ -268,9 +286,21 @@ private fun TabsScaffold(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            TabRow(selectedTabIndex = tab) {
+            val signalCount = rememberSignalCount(core)
+            // Scrollable (i.e. content-sized) rather than equal-width: a fixed TabRow gives each tab
+            // 384/4 dp minus Material's 16dp padding a side, which "Signals" alone very nearly fills
+            // — the count then wraps onto a second line. Content sizing also survives "1.2k".
+            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
                 listOf("Logs", "Events", "Crashes", "Signals").forEachIndexed { index, title ->
-                    Tab(selected = tab == index, onClick = { onTab(index) }, text = { Text(title) })
+                    Tab(
+                        selected = tab == index,
+                        onClick = { onTab(index) },
+                        text = {
+                            // The Signals tab carries a count: it's the one tab whose contents you
+                            // want to know about without opening it.
+                            if (index == 3 && signalCount > 0) TabLabelWithCount(title, signalCount) else Text(title)
+                        },
+                    )
                 }
             }
             when (tab) {

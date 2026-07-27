@@ -155,6 +155,22 @@ internal fun SignalsScreen(
     }
 }
 
+/**
+ * How many signals this run is carrying — the number on the Signals tab badge. Shares its definition
+ * of "counts" with the screen's own `All N` pill so the two can never disagree.
+ */
+@Composable
+internal fun rememberSignalCount(core: LogSenseCore): Int {
+    val hits by core.signals.hits.collectAsState()
+    val muted by core.prefs.mutedSignals.collectAsState()
+    val crashes by remember { core.database.crashDao().observeAll() }.collectAsState(initial = emptyList())
+    val launchCrashIds by core.launchCrashIds.collectAsState()
+    return remember(hits, muted, crashes, launchCrashIds, core.sessionId) {
+        hits.count { it.signal.id !in muted } +
+            crashes.count { it.sessionId == core.sessionId || it.id in launchCrashIds }
+    }
+}
+
 /* ---------------- rows ---------------- */
 
 /**

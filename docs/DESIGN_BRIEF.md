@@ -119,16 +119,19 @@ crash, ANR or native fault ingested at launch (i.e. what ended the previous run)
   low-memory kill, first frame) have **no line to jump to** — the row must not look tappable.
 - **Empty state:** "Nothing flagged yet…" — this is the good outcome, so it should read calmly.
 
-**The same signals on the Logs screen (three more surfaces):**
+**The same signals elsewhere:**
 
 - **Gutter strip** — a signalled row's level stripe thickens and takes the category color.
 - **Inline pill** — a small colored chip carrying the signal label, next to the timestamp.
-- **Minimap rail** — a thin strip down the right edge of the log list with one dot per signal,
-  positioned by where its line sits in the stream. **Read-only, by arithmetic, not preference:**
-  the rail is ~516dp tall, so it holds ~11 dots at the 48dp minimum touch target while up to 500
-  hits can exist, and at a full buffer one pixel is ~45 rows — signals less than ~750 rows apart
-  share a dot. A tap could only pick one of an unknown number of merged signals. Jumping to a
-  specific signal belongs on the Signals tab, where the targets are full-width labelled rows.
+- **Tab count** — the Signals tab carries a live count in the accent color, so you know something
+  is waiting without opening it. It is the one tab whose contents you want to know about from
+  outside. (The tab row is content-sized rather than equal-width; four equal tabs leave "Signals"
+  no room for a number.)
+
+*A minimap rail of signal dots down the right edge was built and removed. It could not be tapped
+reliably — the rail holds ~11 dots at the 48dp minimum touch target while 500 hits can exist, and
+at a full buffer one pixel is ~45 rows, so signals merge — and once read-only it said only "there
+are signals", which the tab count says better and for free.*
 
 ### 4E. Log line detail (sheet)
 
