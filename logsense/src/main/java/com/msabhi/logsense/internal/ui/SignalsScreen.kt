@@ -278,7 +278,6 @@ private fun SignalRowShell(
     subtitle: String,
     selected: Boolean = false,
     onClick: (() -> Unit)? = null,
-    trailing: @Composable (() -> Unit)? = null,
 ) {
     val cs = MaterialTheme.colorScheme
     Row(
@@ -317,7 +316,19 @@ private fun SignalRowShell(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        if (trailing != null) trailing() else Spacer(Modifier.width(12.dp))
+        // A chevron only where there is somewhere to go. Signals the platform reports rather than
+        // matches — a force-stop, an activity starting — have no log line behind them, and without
+        // this they looked identical to rows that jump, so tapping them read as a dead row.
+        Box(Modifier.width(28.dp).padding(top = 2.dp), contentAlignment = Alignment.Center) {
+            if (onClick != null) {
+                Icon(
+                    LogSenseIcons.ChevronRight,
+                    contentDescription = null,
+                    tint = cs.onSurfaceVariant.copy(alpha = 0.7f),
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
     }
 }
 

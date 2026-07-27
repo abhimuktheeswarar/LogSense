@@ -53,6 +53,11 @@ internal object LogSenseIcons {
         "M7.41,15.41L12,10.83l4.59,4.58L18,14l-6,-6 -6,6z",
     )
 
+    val ChevronRight = icon(
+        "ChevronRight",
+        "M10,6L8.59,7.41 13.17,12l-4.58,4.59L10,18l6,-6z",
+    )
+
     val Add = icon(
         "Add",
         "M19,13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z",
