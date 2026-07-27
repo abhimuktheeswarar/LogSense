@@ -46,7 +46,12 @@ public class LogSenseConfig(
     public val maxStoredCrashes: Int = 50,
     /** Max number of recent sessions (process runs) whose events/crashes are kept; older are pruned. */
     public val maxSessions: Int = 10,
-    /** Show the ongoing "capturing" notification (requires notifications enabled by the user). */
+    /**
+     * Show the "capturing" notification (requires notifications enabled by the user). It is
+     * dismissable, and staying dismissed is honoured until capture is explicitly paused or resumed —
+     * deliberately not an ongoing notification, which below Android 14 could not be swiped away and
+     * would outlive the process that posted it.
+     */
     public val showNotification: Boolean = true,
     /** Force light/dark, or follow the system. */
     public val theme: ThemeMode = ThemeMode.SYSTEM,

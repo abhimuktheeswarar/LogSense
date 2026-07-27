@@ -28,6 +28,7 @@ internal object Notifications {
     const val ACTION_PAUSE = "com.msabhi.logsense.action.PAUSE"
     const val ACTION_RESUME = "com.msabhi.logsense.action.RESUME"
     const val ACTION_SHARE_CRASH = "com.msabhi.logsense.action.SHARE_CRASH"
+    const val ACTION_DISMISS = "com.msabhi.logsense.action.DISMISS"
     const val EXTRA_SHARE_CRASH_ID = "com.msabhi.logsense.extra.SHARE_CRASH_ID"
 
     fun createChannels(context: Context) {
@@ -51,14 +52,30 @@ internal object Notifications {
             .setContentTitle(appName(context))
             .setContentText(body)
             .setSubText(context.getString(R.string.logsense_name))
-            .setOngoing(true)
+            // Deliberately NOT setOngoing(true). Below Android 14 an ongoing notification cannot be
+            // swiped away, and notifications outlive the process that posted them — so once the host
+            // process went away this became a permanent, undismissable notification with nothing
+            // alive to cancel it. LogSense is not a foreground service, so the flag bought nothing
+            // to justify that. Dismissal is honoured instead: see setDeleteIntent below.
             .setSilent(true)
             .setOnlyAlertOnce(true)
             .setLocalOnly(true)
             .setContentIntent(launchPendingIntent(context, crashId = null))
+            .setDeleteIntent(dismissPendingIntent(context))
             .addAction(0, actionLabel, capturePendingIntent(context, resume = paused))
             .build()
         notify(context, ID_CAPTURE, notification)
+    }
+
+    /** Fires when the user swipes the capture notification away, so it doesn't come straight back. */
+    private fun dismissPendingIntent(context: Context): PendingIntent {
+        val intent = Intent(context, CaptureActionReceiver::class.java).setAction(ACTION_DISMISS)
+        return PendingIntent.getBroadcast(
+            context,
+            3,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
     }
 
     private fun capturePendingIntent(context: Context, resume: Boolean): PendingIntent {

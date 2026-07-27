@@ -81,7 +81,7 @@ class MyApp : Application() {
 }
 ```
 
-That's it. Open LogSense from the ongoing notification, the LogSense launcher icon, or programmatically via
+That's it. Open LogSense from the capture notification, the LogSense launcher icon, or programmatically via
 `startActivity(LogSense.getLaunchIntent(context))`.
 
 ### Configuration
@@ -100,7 +100,7 @@ LogSense.init(
         retentionDays = 7,               // stored events/crashes older than this are trimmed
         maxStoredEvents = 1_000,
         maxStoredCrashes = 50,
-        showNotification = true,         // ongoing "recording" notification
+        showNotification = true,         // dismissable "recording" notification
         theme = ThemeMode.SYSTEM,        // or force LIGHT / DARK
         accentColor = null,              // ARGB int used as the Material primary color
         customSignals = emptyMap(),      // label -> filter query, on top of the built-in catalog

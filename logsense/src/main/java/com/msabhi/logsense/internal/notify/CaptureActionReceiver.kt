@@ -16,6 +16,9 @@ internal class CaptureActionReceiver : BroadcastReceiver() {
         when (intent.action) {
             Notifications.ACTION_PAUSE -> core.setCaptureEnabled(false)
             Notifications.ACTION_RESUME -> core.setCaptureEnabled(true)
+            // Swiped away: stop reposting it. Capture carries on — this is the indicator, not the
+            // switch — and an explicit pause/resume brings it back.
+            Notifications.ACTION_DISMISS -> core.captureNotificationDismissed = true
             Notifications.ACTION_SHARE_CRASH -> {
                 val crashId = intent.getLongExtra(Notifications.EXTRA_SHARE_CRASH_ID, -1L)
                 if (crashId < 0) return

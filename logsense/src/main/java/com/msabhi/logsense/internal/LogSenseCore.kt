@@ -107,6 +107,11 @@ internal class LogSenseCore private constructor(
     /** Global capture gate — flipped by the notification Pause/Resume actions. */
     val captureEnabled = MutableStateFlow(true)
 
+    /** Set when the user swipes the capture notification away, so the refresh loop stops bringing
+     *  it back. Capture is unaffected — the notification is an indicator, not the switch. */
+    @Volatile
+    var captureNotificationDismissed = false
+
     /** Set true once the user opens the app from the crash notification, so this launch's
      *  post-ingestion crash notification isn't posted again on top of what they're already viewing. */
     @Volatile
@@ -218,7 +223,7 @@ internal class LogSenseCore private constructor(
                 var last = -1
                 while (isActive) {
                     delay(NOTIFICATION_REFRESH_MS)
-                    if (!captureEnabled.value) continue
+                    if (!captureEnabled.value || captureNotificationDismissed) continue
                     val count = buffer.totalReceived.value
                     if (count != last) {
                         Notifications.postCapture(appContext, paused = false, count = count)
@@ -264,6 +269,8 @@ internal class LogSenseCore private constructor(
     /** Pauses/resumes global capture and reflects the state in the ongoing notification. */
     fun setCaptureEnabled(enabled: Boolean) {
         captureEnabled.value = enabled
+        // Pausing or resuming is an explicit act, so it earns the notification back.
+        captureNotificationDismissed = false
         if (config.showNotification) {
             Notifications.postCapture(appContext, paused = !enabled, count = buffer.totalReceived.value)
         }
