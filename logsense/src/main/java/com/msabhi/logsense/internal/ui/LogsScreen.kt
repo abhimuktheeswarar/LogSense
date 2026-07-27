@@ -194,17 +194,20 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     // Paused tabs compute their frozen view once. Nothing here keys a remember() on the big list, so
     // the main thread never even does an O(n) structural comparison.
     // Signal hits are read (not collected) on each buffer emission: they are appended by the same
-    // reader batch that fills the buffer, so the two are always a flush apart at most.
+    // reader batch that fills the buffer, so the two are always a flush apart at most. Muted signals
+    // are dropped here too, not only on the Signals tab — mute has to mean mute everywhere, or you
+    // silence a noisy rule and the log list stays speckled with its pills.
     val logScroll by core.prefs.logScroll.collectAsState()
-    val view by produceState(LogView.EMPTY, predicate, matcher, frozen) {
+    // `muted` is a key, not just a read: the producer otherwise only wakes on a buffer emission, so
+    // muting while the stream is idle would leave the pills on screen until the next line arrived.
+    val muted by core.prefs.mutedSignals.collectAsState()
+    val view by produceState(LogView.EMPTY, predicate, matcher, frozen, muted) {
         val snap = frozen
         if (snap != null) {
-            val hits = core.signals.hits.value
-            value = withContext(Dispatchers.Default) { LogView.of(snap, predicate, matcher, hits) }
+            value = withContext(Dispatchers.Default) { LogView.of(snap, predicate, matcher, audibleHits(core)) }
         } else {
             core.buffer.snapshot.collect { live ->
-                val hits = core.signals.hits.value
-                value = withContext(Dispatchers.Default) { LogView.of(live, predicate, matcher, hits) }
+                value = withContext(Dispatchers.Default) { LogView.of(live, predicate, matcher, audibleHits(core)) }
                 delay(LOG_VIEW_THROTTLE_MS)
             }
         }
@@ -428,6 +431,17 @@ private class LogView(
             )
         }
     }
+}
+
+/**
+ * Hits worth showing: everything the detector holds minus anything since muted. The detector keeps
+ * hits it captured before a mute (so unmuting restores them), which is why the filter belongs here
+ * and not in the buffer.
+ */
+private fun audibleHits(core: LogSenseCore): List<SignalHit> {
+    val muted = core.prefs.mutedSignals.value
+    val hits = core.signals.hits.value
+    return if (muted.isEmpty()) hits else hits.filterNot { it.signal.id in muted }
 }
 
 /** Row index of [entryId] in the rendered list, or -1. Scroll-entry renders one row per tag group,
