@@ -238,7 +238,13 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
         val id = jumpId ?: return@LaunchedEffect
         val row = rowIndexOf(id, groups, items, logScroll)
         if (row >= 0) {
+            // Scroll *and* open the line. Scrolling alone isn't a jump: the default scroll mode
+            // renders one line per row, so landing on a signalled line still leaves it truncated —
+            // and a native fault or a StrictMode violation is all in the part that's cut off. The
+            // scroll puts it at the top of the viewport, so the surrounding lines stay visible
+            // above the sheet.
             listState.scrollToItem(row)
+            sheetEntry = filtered.firstOrNull { it.id == id }
             core.jumpToLogId.value = null
             return@LaunchedEffect
         }
