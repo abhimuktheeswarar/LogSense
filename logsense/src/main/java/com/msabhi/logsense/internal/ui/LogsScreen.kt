@@ -196,15 +196,16 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     // the main thread never even does an O(n) structural comparison.
     // Signal hits are read (not collected) on each buffer emission: they are appended by the same
     // reader batch that fills the buffer, so the two are always a flush apart at most.
-    val view by produceState(LogView.EMPTY, predicate, matcher, frozen) {
+    val logScroll by core.prefs.logScroll.collectAsState()
+    val view by produceState(LogView.EMPTY, predicate, matcher, frozen, logScroll) {
         val snap = frozen
         if (snap != null) {
             val hits = core.signals.hits.value
-            value = withContext(Dispatchers.Default) { LogView.of(snap, predicate, matcher, hits) }
+            value = withContext(Dispatchers.Default) { LogView.of(snap, predicate, matcher, hits, logScroll) }
         } else {
             core.buffer.snapshot.collect { live ->
                 val hits = core.signals.hits.value
-                value = withContext(Dispatchers.Default) { LogView.of(live, predicate, matcher, hits) }
+                value = withContext(Dispatchers.Default) { LogView.of(live, predicate, matcher, hits, logScroll) }
                 delay(LOG_VIEW_THROTTLE_MS)
             }
         }
@@ -219,7 +220,6 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
-    val logScroll by core.prefs.logScroll.collectAsState()
     val snackbar = remember { SnackbarHostState() }
 
     // Only ever set by a signal jump. Rows themselves are not tap targets: they stay selectable
@@ -416,9 +416,11 @@ private class LogView(
             predicate: (LogEntry) -> Boolean,
             matcher: TextMatcher?,
             hits: List<SignalHit>,
+            scroll: LogScroll,
         ): LogView {
             val filtered = entries.filter(predicate)
             val groups = groupRuns(filtered)
+            val items = flatten(groups)
             val matchIndices = if (matcher == null) {
                 emptyList()
             } else {
@@ -427,17 +429,31 @@ private class LogView(
             // Only hits whose line survived this tab's filter — the minimap describes what's on screen.
             val hitById = hits.mapNotNull { hit -> hit.entryId?.let { it to hit.signal } }.toMap()
             val signals = HashMap<Long, Signal>(hitById.size)
-            val marks = ArrayList<SignalMark>(hitById.size)
-            val span = (filtered.size - 1).coerceAtLeast(1).toFloat()
-            filtered.forEachIndexed { index, entry ->
-                val signal = hitById[entry.id] ?: return@forEachIndexed
-                signals[entry.id] = signal
-                marks += SignalMark(index / span, signal.category, entry.id)
+            filtered.forEach { entry -> hitById[entry.id]?.let { signals[entry.id] = it } }
+
+            // Marks are positioned in the *rendered row* index space, not the entry space, so the
+            // rail's dots and its viewport bracket agree exactly. Scroll-entry renders one row per
+            // tag group (so a group with several signalled lines gets one dot, the first); every
+            // other mode renders a flat band/line stream.
+            val marks = if (scroll == LogScroll.ENTRY) {
+                val span = (groups.size - 1).coerceAtLeast(1).toFloat()
+                groups.mapIndexedNotNull { row, group ->
+                    val line = group.lines.firstOrNull { signals.containsKey(it.entry.id) }
+                        ?: return@mapIndexedNotNull null
+                    SignalMark(row / span, signals.getValue(line.entry.id).category, line.entry.id)
+                }
+            } else {
+                val span = (items.size - 1).coerceAtLeast(1).toFloat()
+                items.mapIndexedNotNull { row, item ->
+                    val id = (item as? LogItem.Line)?.entry?.id ?: return@mapIndexedNotNull null
+                    val signal = signals[id] ?: return@mapIndexedNotNull null
+                    SignalMark(row / span, signal.category, id)
+                }
             }
             return LogView(
                 filtered = filtered,
                 groups = groups,
-                items = flatten(groups),
+                items = items,
                 tags = entries.mapTo(sortedSetOf()) { it.tag }.toList(),
                 matchIndices = matchIndices,
                 signals = signals,
@@ -803,6 +819,8 @@ private fun LogList(
         }
         SignalRail(
             marks = railMarks,
+            rowCount = count,
+            listState = listState,
             modifier = Modifier.align(Alignment.CenterEnd),
             onSelect = onJumpTo,
         )
