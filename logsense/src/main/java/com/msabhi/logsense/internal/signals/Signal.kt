@@ -5,13 +5,13 @@ package com.msabhi.logsense.internal.signals
  * pipeline (`CrashHandler` + `ExitInfoCollector`) — those arrive as `CrashEntity` rows on the next
  * launch, while the patterns here fire immediately, in the run where the problem happens.
  */
-internal enum class SignalCategory(val label: String) {
-    CRASH("Crash"),
-    ANR("ANR"),
-    NATIVE("Native"),
-    MEMORY("Memory"),
-    LIFECYCLE("Lifecycle"),
-    CUSTOM("Custom"),
+internal enum class SignalCategory(val label: String, val severity: Int) {
+    CRASH("Crash", 0),
+    NATIVE("Native", 1),
+    ANR("ANR", 2),
+    MEMORY("Memory", 3),
+    CUSTOM("Custom", 4),
+    LIFECYCLE("Lifecycle", 5),
 }
 
 /**

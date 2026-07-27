@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -197,11 +198,20 @@ private fun sessionHeaderText(meta: SessionMeta, onSurface: Color, onVar: Color)
     withStyle(SpanStyle(color = onVar, fontFamily = FontFamily.Monospace, fontSize = 11.sp)) { append(secondary) }
 }
 
-/** Wraps [content] in a swipe-to-delete (end→start) with a red delete background. */
+/**
+ * Wraps [content] in a swipe (end→start) that reveals a coloured action panel. Defaults to the
+ * destructive delete used by Events and Crashes; Signals passes a mute instead, which is reversible
+ * and so gets the warn colour rather than the error one.
+ */
 @Composable
-internal fun SwipeToDeleteRow(onDelete: () -> Unit, content: @Composable () -> Unit) {
-    // The severity-palette error red (matches the design's --e), not the Material error role.
-    val error = LogLevel.ERROR.color()
+internal fun SwipeToDeleteRow(
+    onDelete: () -> Unit,
+    label: String = "Delete",
+    icon: ImageVector = LogSenseIcons.Delete,
+    // The severity-palette colours (matching the design's --e / --w), not the Material roles.
+    background: Color = LogLevel.ERROR.color(),
+    content: @Composable () -> Unit,
+) {
     val state = rememberSwipeToDismissBoxState(
         confirmValueChange = {
             if (it == SwipeToDismissBoxValue.EndToStart) { onDelete(); true } else false
@@ -212,13 +222,13 @@ internal fun SwipeToDeleteRow(onDelete: () -> Unit, content: @Composable () -> U
         enableDismissFromStartToEnd = false,
         backgroundContent = {
             Row(
-                modifier = Modifier.fillMaxSize().background(error).padding(end = 22.dp),
+                modifier = Modifier.fillMaxSize().background(background).padding(end = 22.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.End,
             ) {
-                Text("Delete", style = MaterialTheme.typography.labelLarge, color = Color.White, fontWeight = FontWeight.SemiBold)
+                Text(label, style = MaterialTheme.typography.labelLarge, color = Color.White, fontWeight = FontWeight.SemiBold)
                 Spacer(Modifier.width(6.dp))
-                Icon(LogSenseIcons.Delete, contentDescription = null, tint = Color.White)
+                Icon(icon, contentDescription = null, tint = Color.White)
             }
         },
         content = { content() },

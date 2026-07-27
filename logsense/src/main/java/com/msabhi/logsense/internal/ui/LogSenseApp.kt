@@ -44,7 +44,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import com.msabhi.logsense.R
@@ -174,33 +176,39 @@ private fun CrashLoadingScreen(onCancel: () -> Unit) {
 }
 
 /**
- * A tab label with a filled count chip beside it. This only fits because the tab row is
- * content-sized; in an equal-width TabRow the chip's padding is squeezed to nothing and the digits
- * wrap. (A Material BadgedBox is the wrong tool here — it anchors to the content's corner, which
- * puts the badge on top of the word rather than beside it.)
+ * A tab label with a filled count chip beside it, coloured by the **worst** signal currently held —
+ * the same palette as the inline pills and gutter stripes, so three crashes don't look like three
+ * lifecycle notes. The number says how many, the colour says how bad.
+ *
+ * This only fits because the tab row is content-sized; in an equal-width TabRow the chip's padding
+ * is squeezed to nothing and the digits wrap. (A Material BadgedBox is the wrong tool here — it
+ * anchors to the content's corner, so the badge lands on top of the word rather than beside it.)
  *
  * The count is bounded: the detector keeps at most 500 hits and stored crashes are capped by
  * `maxStoredCrashes`, so this tops out around three digits. [formatCount] would compact anything
  * past 999 to "1.2k" regardless, and the tab simply grows to fit.
  */
 @Composable
-private fun TabLabelWithCount(title: String, count: Int) {
-    val cs = MaterialTheme.colorScheme
+private fun TabLabelWithCount(title: String, summary: SignalSummary) {
+    val chip = summary.worst?.color() ?: MaterialTheme.colorScheme.primary
+    // The category palette spans light ambers and dark reds across the two themes, so pick the
+    // readable ink rather than assuming one; onPrimary would be wrong for most of them.
+    val ink = if (chip.luminance() > 0.5f) Color.Black else Color.White
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(title)
         Spacer(Modifier.width(6.dp))
         Box(
             Modifier
                 .clip(CircleShape)
-                .background(cs.primary)
+                .background(chip)
                 .defaultMinSize(minWidth = 18.dp)
                 .padding(horizontal = 5.dp, vertical = 1.dp),
             contentAlignment = Alignment.Center,
         ) {
             Text(
-                text = formatCount(count),
+                text = formatCount(summary.count),
                 style = MaterialTheme.typography.labelSmall,
-                color = cs.onPrimary,
+                color = ink,
                 maxLines = 1,
                 softWrap = false,
             )
@@ -304,7 +312,7 @@ private fun TabsScaffold(
         },
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            val signalCount = rememberSignalCount(core)
+            val signals = rememberSignalSummary(core)
             // Scrollable (i.e. content-sized) rather than equal-width: a fixed TabRow gives each tab
             // 384/4 dp minus Material's 16dp padding a side, which "Signals" alone very nearly fills
             // — the count then wraps onto a second line. Content sizing also survives "1.2k".
@@ -316,7 +324,7 @@ private fun TabsScaffold(
                         text = {
                             // The Signals tab carries a count: it's the one tab whose contents you
                             // want to know about without opening it.
-                            if (index == 3 && signalCount > 0) TabLabelWithCount(title, signalCount) else Text(title)
+                            if (index == 3 && signals.count > 0) TabLabelWithCount(title, signals) else Text(title)
                         },
                     )
                 }

@@ -44,6 +44,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.msabhi.logsense.internal.LogSenseCore
 import com.msabhi.logsense.internal.data.CrashEntity
+import com.msabhi.logsense.internal.reader.LogLevel
 import com.msabhi.logsense.internal.signals.SignalCategory
 import com.msabhi.logsense.internal.signals.SignalHit
 import com.msabhi.logsense.internal.signals.triage
@@ -123,16 +124,25 @@ internal fun SignalsScreen(
                     LazyColumn(Modifier.fillMaxSize()) {
                         items(shown, key = { it.key }) { row ->
                             when (row) {
-                                is SignalRow.Hit -> HitRow(
-                                    hit = row.hit,
-                                    repeats = row.repeats,
-                                    onClick = {
-                                        val id = row.hit.entryId ?: return@HitRow
-                                        core.jumpToLogId.value = id
-                                        onJumpToLogs()
-                                    },
-                                    onMute = { mute(row.hit) },
-                                )
+                                // Swipe to mute, matching the swipe-to-delete on Events and Crashes.
+                                // Warn-coloured, not error: muting is reversible and hides nothing
+                                // that already happened.
+                                is SignalRow.Hit -> SwipeToDeleteRow(
+                                    onDelete = { mute(row.hit) },
+                                    label = "Mute",
+                                    icon = LogSenseIcons.Close,
+                                    background = LogLevel.WARN.color(),
+                                ) {
+                                    HitRow(
+                                        hit = row.hit,
+                                        repeats = row.repeats,
+                                        onClick = {
+                                            val id = row.hit.entryId ?: return@HitRow
+                                            core.jumpToLogId.value = id
+                                            onJumpToLogs()
+                                        },
+                                    )
+                                }
 
                                 is SignalRow.Crash -> CrashSignalRow(
                                     crash = row.crash,
@@ -155,20 +165,34 @@ internal fun SignalsScreen(
     }
 }
 
+/** What the Signals tab shows without being opened: how many, and how bad the worst one is. */
+internal data class SignalSummary(val count: Int, val worst: SignalCategory?)
+
 /**
- * How many signals this run is carrying — the number on the Signals tab badge. Shares its definition
- * of "counts" with the screen's own `All N` pill so the two can never disagree.
+ * Summarises what this run is carrying, for the Signals tab. Shares its definition of "counts" with
+ * the screen's own `All N` pill so the two can never disagree.
  */
 @Composable
-internal fun rememberSignalCount(core: LogSenseCore): Int {
+internal fun rememberSignalSummary(core: LogSenseCore): SignalSummary {
     val hits by core.signals.hits.collectAsState()
     val muted by core.prefs.mutedSignals.collectAsState()
     val crashes by remember { core.database.crashDao().observeAll() }.collectAsState(initial = emptyList())
     val launchCrashIds by core.launchCrashIds.collectAsState()
     return remember(hits, muted, crashes, launchCrashIds, core.sessionId) {
-        hits.count { it.signal.id !in muted } +
-            crashes.count { it.sessionId == core.sessionId || it.id in launchCrashIds }
+        val liveHits = hits.filter { it.signal.id !in muted }
+        val ownCrashes = crashes.filter { it.sessionId == core.sessionId || it.id in launchCrashIds }
+        val categories = liveHits.map { it.signal.category } + ownCrashes.map { crashCategory(it.type) }
+        SignalSummary(
+            count = liveHits.size + ownCrashes.size,
+            worst = categories.minByOrNull { it.severity },
+        )
     }
+}
+
+private fun crashCategory(type: String) = when (type) {
+    "ANR" -> SignalCategory.ANR
+    "NATIVE" -> SignalCategory.NATIVE
+    else -> SignalCategory.CRASH
 }
 
 /* ---------------- rows ---------------- */
@@ -210,16 +234,12 @@ internal sealed interface SignalRow {
         override val key get() = "c:${crash.id}"
         override val timeMs get() = crash.timestamp
         override val occurrences get() = 1
-        override val category get() = when (crash.type) {
-            "ANR" -> SignalCategory.ANR
-            "NATIVE" -> SignalCategory.NATIVE
-            else -> SignalCategory.CRASH
-        }
+        override val category get() = crashCategory(crash.type)
     }
 }
 
 @Composable
-private fun HitRow(hit: SignalHit, repeats: Int, onClick: () -> Unit, onMute: () -> Unit) {
+private fun HitRow(hit: SignalHit, repeats: Int, onClick: () -> Unit) {
     val jumpable = hit.entryId != null
     SignalRowShell(
         color = hit.signal.category.color(),
@@ -228,16 +248,6 @@ private fun HitRow(hit: SignalHit, repeats: Int, onClick: () -> Unit, onMute: ()
         subtitle = "${hit.tag}: ${hit.preview}",
         // A reported signal has no matched line, so there is nowhere to jump — don't pretend.
         onClick = if (jumpable) onClick else null,
-        trailing = {
-            IconButton(onClick = onMute) {
-                Icon(
-                    LogSenseIcons.Close,
-                    contentDescription = "Mute ${hit.signal.label}",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
-        },
     )
 }
 
