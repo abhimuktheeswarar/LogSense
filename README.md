@@ -37,7 +37,7 @@ launcher icon.
   (or plug in your own `analyticsExtractor`). QA can add more tags — each with an optional regex — live in
   Settings. Per-tag tabs, live keyword filter, the same find bar, and export one / selected / all events as
   JSON (text or file).
-- **Signal catalog** — 40+ built-in patterns across crash · ANR · native fault · memory · lifecycle, matched
+- **Signal catalog** — 43 built-in signals across crash · ANR · native fault · memory · lifecycle, matched
   on the live stream and surfaced three ways: a colored gutter strip and an inline pill on the line itself, a
   live count on the **Signals** tab so you know without opening it, and the tab itself listing everything
   worth looking at in this run. Tap a signal to land on its line, scrolled into context and opened in full — a wide line is
@@ -64,8 +64,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.4.1")
-    releaseImplementation("com.msabhi:logsense-no-op:0.4.1")
+    debugImplementation("com.msabhi:logsense:0.5.0")
+    releaseImplementation("com.msabhi:logsense-no-op:0.5.0")
 }
 ```
 
