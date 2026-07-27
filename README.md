@@ -39,8 +39,8 @@ launcher icon.
   JSON (text or file).
 - **Signal catalog** — 40+ built-in patterns across crash · ANR · native fault · memory · lifecycle, matched
   on the live stream and surfaced four ways: a colored gutter strip and an inline pill on the line itself, a
-  dot on the minimap rail down the right edge, and a **Signals** tab listing everything worth looking at in
-  this run. Tap a signal to land on its line, scrolled into context and opened in full — a wide line is
+  dot on the read-only minimap rail down the right edge (an at-a-glance "is anything wrong further down"), and
+  a **Signals** tab listing everything worth looking at in this run. Tap a signal to land on its line, scrolled into context and opened in full — a wide line is
   clipped in the list, and the part naming the culprit is usually the clipped part. Tap a crash signal to open
   its report. Conditions the app's own logcat can't show — force-stop, kill by signal, low-memory kill, first
   frame — are read from `ApplicationExitInfo` and the activity lifecycle instead of scraped from a log line,

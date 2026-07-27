@@ -332,10 +332,6 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
                 autoFollow = !tab.paused,
                 signals = view.signals,
                 marks = view.marks,
-                onJumpTo = { id ->
-                    val row = rowIndexOf(id, groups, items, logScroll)
-                    if (row >= 0) scope.launch { listState.scrollToItem(row) }
-                },
             )
         }
     }
@@ -769,7 +765,6 @@ private fun LogList(
     autoFollow: Boolean,
     signals: Map<Long, Signal>,
     marks: List<SignalMark>,
-    onJumpTo: (Long) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // Scroll-entry renders one item per tag group; every other mode renders a flat band/line stream.
@@ -817,11 +812,7 @@ private fun LogList(
         val railMarks = remember(marks, categoryColors) {
             marks.map { RailMark(it.fraction, categoryColors.getValue(it.category), it.entryId) }
         }
-        SignalRail(
-            marks = railMarks,
-            modifier = Modifier.align(Alignment.CenterEnd),
-            onSelect = onJumpTo,
-        )
+        SignalRail(marks = railMarks, modifier = Modifier.align(Alignment.CenterEnd))
         Column(
             modifier = Modifier.align(Alignment.BottomEnd).padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),

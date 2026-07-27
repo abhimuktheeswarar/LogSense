@@ -124,7 +124,11 @@ crash, ANR or native fault ingested at launch (i.e. what ended the previous run)
 - **Gutter strip** — a signalled row's level stripe thickens and takes the category color.
 - **Inline pill** — a small colored chip carrying the signal label, next to the timestamp.
 - **Minimap rail** — a thin strip down the right edge of the log list with one dot per signal,
-  positioned by where its line sits in the stream. Tapping a dot scrolls to that line.
+  positioned by where its line sits in the stream. **Read-only, by arithmetic, not preference:**
+  the rail is ~516dp tall, so it holds ~11 dots at the 48dp minimum touch target while up to 500
+  hits can exist, and at a full buffer one pixel is ~45 rows — signals less than ~750 rows apart
+  share a dot. A tap could only pick one of an unknown number of merged signals. Jumping to a
+  specific signal belongs on the Signals tab, where the targets are full-width labelled rows.
 
 ### 4E. Log line detail (sheet)
 
