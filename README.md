@@ -46,8 +46,9 @@ launcher icon.
   frame — are read from `ApplicationExitInfo` and the activity lifecycle instead of scraped from a log line,
   so they need no permission and carry a real cold-start number. Mute any built-in from the tab or Settings;
   add your own with `customSignals`, using the same query syntax as the filter field.
-- **Crash triage** — every crash report opens with the likely cause, the topmost stack frame that belongs to
-  *your* code rather than the framework, and what to check next — derived on device, no symbol upload.
+- **Crash triage** — every crash report opens with the topmost stack frame that belongs to *your* code
+  rather than the framework, lifted out of a trace that is mostly framework noise — plus a note when the
+  fault has a remedy that isn't obvious from its name. Derived on device, no symbol upload.
 - **Crash capture** — an uncaught-exception handler writes the stacktrace, device info and the last ~200
   log lines to disk *before* the process dies, and posts a crash notification immediately (best-effort, from
   the crashing process) — tapping it opens the report once it's ingested on the next launch. ANRs and native
@@ -64,8 +65,8 @@ launcher icon.
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.5.0")
-    releaseImplementation("com.msabhi:logsense-no-op:0.5.0")
+    debugImplementation("com.msabhi:logsense:0.5.1")
+    releaseImplementation("com.msabhi:logsense-no-op:0.5.1")
 }
 ```
 

@@ -176,8 +176,12 @@ private fun CrashDetailContent(core: LogSenseCore, crash: CrashEntity) {
         }
 
         val read = remember(crash.id) { triage(crash, core.appContext.packageName) }
-        Section("Triage")
-        TriageCard(read)
+        // Nothing to say about an ordinary NPE beyond the frame, so the section disappears entirely
+        // rather than padding the screen with a sentence restating the exception name.
+        if (read.appFrame != null || read.note != null) {
+            Section("Your code")
+            TriageCard(read)
+        }
 
         Section("Device")
         MonoBlock(crash.deviceInfo)
@@ -191,8 +195,8 @@ private fun CrashDetailContent(core: LogSenseCore, crash: CrashEntity) {
 }
 
 /**
- * The three lines worth reading before the forty in the stack trace: the likely cause, the topmost
- * frame that belongs to the app rather than the framework, and what to do about it.
+ * The topmost frame belonging to the app, lifted out of forty lines of framework trace — plus a note
+ * only when the fault's remedy isn't obvious from its name. Most crashes show just the frame.
  */
 @Composable
 private fun TriageCard(read: Triage) {
@@ -205,31 +209,25 @@ private fun TriageCard(read: Triage) {
             .border(1.dp, cs.outlineVariant, RoundedCornerShape(10.dp))
             .padding(12.dp),
     ) {
-        Text(read.cause, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface)
-        read.appFrame?.let { frame ->
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = "YOUR CODE",
-                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
-                color = cs.primary,
-            )
-            Spacer(Modifier.height(3.dp))
+        if (read.appFrame != null) {
             SelectionContainer {
                 Text(
-                    text = frame,
+                    text = read.appFrame,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
                     color = cs.onSurface,
                 )
             }
+        } else {
+            Text(
+                text = "No frame from this app — the trace is all framework or native code.",
+                style = MaterialTheme.typography.bodySmall,
+                color = cs.onSurfaceVariant,
+            )
         }
-        Spacer(Modifier.height(10.dp))
-        Text(
-            text = "NEXT",
-            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
-            color = cs.primary,
-        )
-        Spacer(Modifier.height(3.dp))
-        Text(read.nextSteps, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        read.note?.let { note ->
+            Spacer(Modifier.height(10.dp))
+            Text(note, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
+        }
     }
 }
 

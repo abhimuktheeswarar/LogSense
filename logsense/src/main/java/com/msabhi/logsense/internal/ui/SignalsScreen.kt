@@ -264,7 +264,11 @@ private fun CrashSignalRow(crash: CrashEntity, appPackage: String, selected: Boo
         color = MaterialTheme.colorScheme.error,
         title = title,
         timeMs = crash.timestamp,
-        subtitle = read.appFrame ?: crash.message?.takeIf { it.isNotBlank() } ?: read.cause,
+        // The app's own frame first, since that's what identifies the crash; the exception message
+        // is the fallback when the trace holds no frame of theirs.
+        subtitle = read.appFrame
+            ?: crash.message?.takeIf { it.isNotBlank() }
+            ?: crash.type,
         selected = selected,
         onClick = onClick,
     )

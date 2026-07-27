@@ -9,6 +9,7 @@ import com.msabhi.logsense.internal.signals.appFrame
 import com.msabhi.logsense.internal.signals.triage
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -102,8 +103,8 @@ class HostileConfigTest {
             logContext = "",
         )
         val read = triage(bare, "")
-        assertTrue(read.cause.isNotBlank())
-        assertTrue(read.nextSteps.isNotBlank())
+        assertNull(read.appFrame)
+        assertNull(read.note)
     }
 
     @Test

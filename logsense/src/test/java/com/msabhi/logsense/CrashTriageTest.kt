@@ -4,6 +4,7 @@ import com.msabhi.logsense.internal.data.CrashEntity
 import com.msabhi.logsense.internal.signals.appFrame
 import com.msabhi.logsense.internal.signals.triage
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -35,30 +36,36 @@ class CrashTriageTest {
     """.trimIndent()
 
     @Test
-    fun `a known exception gets its own cause and next steps`() {
+    fun `an exception that explains itself gets no note`() {
+        // Writing "something was null" under a NullPointerException is noise dressed as help.
         val result = triage(crash(exceptionClass = "java.lang.NullPointerException", stacktrace = trace), "com.foo.app")
-        assertTrue(result.cause.contains("null", ignoreCase = true))
-        assertTrue(result.nextSteps.isNotBlank())
+        assertNull(result.note)
+        assertNotNull(result.appFrame)
     }
 
     @Test
-    fun `an unknown exception falls back to the generic JVM read`() {
-        val result = triage(crash(exceptionClass = "com.foo.WeirdBespokeException"), "com.foo.app")
-        assertTrue(result.cause.contains("no handler caught"))
+    fun `an exception with a non-obvious remedy gets a note`() {
+        val result = triage(
+            crash(exceptionClass = "android.app.RemoteServiceException\$ForegroundServiceDidNotStartInTimeException"),
+            "com.foo.app",
+        )
+        assertTrue(result.note!!.contains("startForeground"))
     }
 
     @Test
-    fun `an ANR gets the ANR read, whatever the class is`() {
+    fun `an unknown exception gets no note either`() {
+        assertNull(triage(crash(exceptionClass = "com.foo.WeirdBespokeException"), "com.foo.app").note)
+    }
+
+    @Test
+    fun `an ANR points at the signals before it, having no usable trace`() {
         val result = triage(crash(type = "ANR", exceptionClass = null), "com.foo.app")
-        assertTrue(result.cause.contains("main thread"))
-        assertTrue(result.nextSteps.contains("skipped frames"))
+        assertTrue(result.note!!.contains("skipped frames"))
     }
 
     @Test
-    fun `a native fault gets the native read`() {
-        val result = triage(crash(type = "NATIVE"), "com.foo.app")
-        assertTrue(result.cause.contains("native", ignoreCase = true))
-        assertTrue(result.nextSteps.contains("SIGSEGV"))
+    fun `a native fault explains its signal`() {
+        assertTrue(triage(crash(type = "NATIVE"), "com.foo.app").note!!.contains("SIGSEGV"))
     }
 
     @Test
@@ -67,7 +74,7 @@ class CrashTriageTest {
             crash(exceptionClass = "android.view.WindowManager\$BadTokenException"),
             "com.foo.app",
         )
-        assertTrue(result.cause.contains("window was added"))
+        assertTrue(result.note!!.contains("window added"))
     }
 
     @Test
