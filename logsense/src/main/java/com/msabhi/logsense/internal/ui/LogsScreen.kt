@@ -613,8 +613,11 @@ private fun LogsOverflowMenu(
                 leadingIcon = { Icon(LogSenseIcons.Share, contentDescription = null) },
                 onClick = { menuOpen = false; onShareFile() },
             )
+            // "all logs", not "Clear": tabs are filters over one shared buffer, so this empties
+            // every tab (and the signals that point into it), sitting right under a menu item
+            // that *is* tab-scoped.
             DropdownMenuItem(
-                text = { Text("Clear") },
+                text = { Text("Clear all logs") },
                 leadingIcon = { Icon(LogSenseIcons.Delete, contentDescription = null) },
                 onClick = { menuOpen = false; onClear() },
             )
