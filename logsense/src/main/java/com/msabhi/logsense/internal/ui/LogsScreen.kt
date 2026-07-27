@@ -73,6 +73,7 @@ import com.msabhi.logsense.internal.logs.LogQuery
 import com.msabhi.logsense.internal.logs.LogScroll
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.logs.ViewMode
+import com.msabhi.logsense.internal.logs.since
 import com.msabhi.logsense.internal.reader.LogEntry
 import com.msabhi.logsense.internal.reader.LogLevel
 import com.msabhi.logsense.internal.search.SearchQuery
@@ -179,7 +180,10 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     // Per-tab pause freezes this tab's view while the shared buffer keeps filling.
     var frozen by remember { mutableStateOf<List<LogEntry>?>(null) }
     LaunchedEffect(tab.paused) { frozen = if (tab.paused) core.buffer.currentSnapshot() else null }
-    val entries = frozen ?: liveEntries
+    // Everything this tab shows starts after its own clear watermark; the buffer itself is untouched.
+    val clearedAt = tab.clearedAtId
+    val buffered = frozen ?: liveEntries
+    val entries = buffered.since(clearedAt)
     val bufferedWhilePaused = if (tab.paused) (liveEntries.size - (frozen?.size ?: 0)).coerceAtLeast(0) else 0
 
     val predicate = remember(tab.filter) { LogQuery.compile(tab.filter) }
@@ -201,13 +205,17 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     // `muted` is a key, not just a read: the producer otherwise only wakes on a buffer emission, so
     // muting while the stream is idle would leave the pills on screen until the next line arrived.
     val muted by core.prefs.mutedSignals.collectAsState()
-    val view by produceState(LogView.EMPTY, predicate, matcher, frozen, muted) {
+    val view by produceState(LogView.EMPTY, predicate, matcher, frozen, muted, clearedAt) {
         val snap = frozen
         if (snap != null) {
-            value = withContext(Dispatchers.Default) { LogView.of(snap, predicate, matcher, audibleHits(core)) }
+            value = withContext(Dispatchers.Default) {
+                LogView.of(snap.since(clearedAt), predicate, matcher, audibleHits(core))
+            }
         } else {
             core.buffer.snapshot.collect { live ->
-                value = withContext(Dispatchers.Default) { LogView.of(live, predicate, matcher, audibleHits(core)) }
+                value = withContext(Dispatchers.Default) {
+                    LogView.of(live.since(clearedAt), predicate, matcher, audibleHits(core))
+                }
                 delay(LOG_VIEW_THROTTLE_MS)
             }
         }
@@ -259,9 +267,15 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
         if (view === LogView.EMPTY) return@LaunchedEffect // still deriving; wait for the next pass
         // Snackbars go on the screen's scope, not this effect's: the effect is keyed on `items`,
         // which changes several times a second while live, and would cancel the bar mid-show.
-        if (entries.none { it.id == id }) {
+        // Check the buffer, not this tab's slice: a line this tab cleared still exists, it is just
+        // hidden here. Un-clear the tab and let the next pass scroll to it.
+        if (buffered.none { it.id == id }) {
             core.jumpToLogId.value = null
             scope.launch { snackbar.showSnackbar("That line is no longer in the buffer") }
+            return@LaunchedEffect
+        }
+        if (clearedAt > 0L && id <= clearedAt) {
+            onTabChange(tab.copy(clearedAtId = 0L))
             return@LaunchedEffect
         }
         val previous = tab.filter
@@ -298,6 +312,12 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
                 onRestart = { core.restartReader() },
                 onShareText = { ShareUtil.shareLogText(context, filtered) },
                 onShareFile = { core.scope.launch { ShareUtil.shareLogFile(context, filtered) } },
+                // Hides everything captured so far in *this* tab only; the buffer keeps the lines,
+                // so other tabs and the signals that point at them are untouched.
+                onClearTab = {
+                    val newest = core.buffer.currentSnapshot().lastOrNull()?.id ?: 0L
+                    onTabChange(tab.copy(clearedAtId = newest))
+                },
                 onClear = { core.scope.launch { core.clearLogs() } },
             )
         }
@@ -552,6 +572,7 @@ private fun LogsOverflowMenu(
     onRestart: () -> Unit,
     onShareText: () -> Unit,
     onShareFile: () -> Unit,
+    onClearTab: () -> Unit,
     onClear: () -> Unit,
 ) {
     var menuOpen by remember { mutableStateOf(false) }
@@ -613,9 +634,14 @@ private fun LogsOverflowMenu(
                 leadingIcon = { Icon(LogSenseIcons.Share, contentDescription = null) },
                 onClick = { menuOpen = false; onShareFile() },
             )
-            // "all logs", not "Clear": tabs are filters over one shared buffer, so this empties
-            // every tab (and the signals that point into it), sitting right under a menu item
-            // that *is* tab-scoped.
+            // Two clears, each named for its scope. Tabs are filters over one shared buffer, so the
+            // first only hides lines from this tab while the second empties the buffer for every
+            // tab (and the signals that point into it).
+            DropdownMenuItem(
+                text = { Text("Clear this tab") },
+                leadingIcon = { Icon(LogSenseIcons.Delete, contentDescription = null) },
+                onClick = { menuOpen = false; onClearTab() },
+            )
             DropdownMenuItem(
                 text = { Text("Clear all logs") },
                 leadingIcon = { Icon(LogSenseIcons.Delete, contentDescription = null) },
