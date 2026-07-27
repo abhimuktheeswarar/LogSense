@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -316,7 +317,9 @@ private fun TabsScaffold(
             // Scrollable (i.e. content-sized) rather than equal-width: a fixed TabRow gives each tab
             // 384/4 dp minus Material's 16dp padding a side, which "Signals" alone very nearly fills
             // — the count then wraps onto a second line. Content sizing also survives "1.2k".
-            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp) {
+            // divider = {}: a scrollable tab row draws its divider *inside* the scrolling content,
+            // so it ends where the tabs end and leaves a gap to the right. Ours spans the container.
+            ScrollableTabRow(selectedTabIndex = tab, edgePadding = 12.dp, divider = {}) {
                 listOf("Logs", "Events", "Crashes", "Signals").forEachIndexed { index, title ->
                     Tab(
                         selected = tab == index,
@@ -329,6 +332,7 @@ private fun TabsScaffold(
                     )
                 }
             }
+            HorizontalDivider()
             when (tab) {
                 0 -> LogsScreen(core)
                 1 -> EventsScreen(
