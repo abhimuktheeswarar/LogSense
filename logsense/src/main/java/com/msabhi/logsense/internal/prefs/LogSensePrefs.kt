@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.logs.LevelColorOverride
+import com.msabhi.logsense.internal.logs.DEFAULT_TAB_ID
 import com.msabhi.logsense.internal.logs.LogScroll
 import com.msabhi.logsense.internal.logs.LogTab
 import com.msabhi.logsense.internal.reader.LogLevel
@@ -69,11 +70,15 @@ internal class LogSensePrefs(context: Context) {
         sp.edit().putBoolean(KEY_KEEP_CRASHES, enabled).apply()
     }
 
-    fun loadTabs(): List<LogTab> =
-        sp.getString(KEY_TABS, null)
+    fun loadTabs(): List<LogTab> {
+        val saved = sp.getString(KEY_TABS, null)
             ?.let { PrefsCodec.decodeTabs(it) }
             ?.takeIf { it.isNotEmpty() }
-            ?: listOf(DEFAULT_TAB)
+            ?: return listOf(DEFAULT_TAB)
+        // "All" is permanent, so it has to be there — including for anyone who closed it back when
+        // that was allowed. Otherwise the rule only holds for fresh installs.
+        return if (saved.any { it.id == DEFAULT_TAB_ID }) saved else listOf(DEFAULT_TAB) + saved
+    }
 
     fun saveTabs(tabs: List<LogTab>) {
         sp.edit().putString(KEY_TABS, PrefsCodec.encodeTabs(tabs)).apply()
@@ -111,7 +116,7 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_KEEP_CRASHES = "keep_past_crashes"
         private const val KEY_TAG_PATTERNS = "tag_patterns"
         private const val KEY_MUTED_SIGNALS = "muted_signals"
-        val DEFAULT_TAB = LogTab(id = 0, name = "All")
+        val DEFAULT_TAB = LogTab(id = DEFAULT_TAB_ID, name = "All")
     }
 }
 

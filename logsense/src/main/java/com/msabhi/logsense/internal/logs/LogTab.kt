@@ -26,6 +26,12 @@ internal data class LogFilter(
 )
 
 /**
+ * Id of the "All" tab LogSense starts with. It is the one tab that can't be closed — a stable home
+ * to come back to, and the only tab guaranteed to exist. Every tab added later gets a higher id.
+ */
+internal const val DEFAULT_TAB_ID = 0L
+
+/**
  * One Android-Studio-style logcat tab: its own filter + view preferences. [paused] and
  * [clearedAtId] are runtime-only — [com.msabhi.logsense.internal.prefs.PrefsCodec] persists neither,
  * and a clear watermark would be meaningless next run anyway, since entry ids restart with the reader.

@@ -68,6 +68,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.msabhi.logsense.internal.LogSenseCore
+import com.msabhi.logsense.internal.logs.DEFAULT_TAB_ID
 import com.msabhi.logsense.internal.logs.LogFilter
 import com.msabhi.logsense.internal.logs.LogQuery
 import com.msabhi.logsense.internal.logs.LogScroll
@@ -107,7 +108,9 @@ internal fun LogsScreen(core: LogSenseCore) {
                 persist()
             },
             onClose = { i ->
-                if (tabs.size > 1) {
+                // Guarded here as well as in the strip: the "All" tab is the one that always exists,
+                // so nothing may remove it, however the close gets triggered.
+                if (tabs.size > 1 && tabs[i].id != DEFAULT_TAB_ID) {
                     tabs.removeAt(i)
                     selected = index.coerceAtMost(tabs.lastIndex)
                     persist()
@@ -137,6 +140,8 @@ private fun LogTabStrip(
     ) {
         tabs.forEachIndexed { i, tab ->
             val on = i == selected
+            // "All" has no close affordance: it is the tab that is always there to come back to.
+            val closable = on && tabs.size > 1 && tab.id != DEFAULT_TAB_ID
             Row(
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
@@ -145,7 +150,7 @@ private fun LogTabStrip(
                         else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(50)),
                     )
                     .clickable { onSelect(i) }
-                    .padding(start = 13.dp, end = if (on && tabs.size > 1) 6.dp else 13.dp, top = 7.dp, bottom = 7.dp),
+                    .padding(start = 13.dp, end = if (closable) 6.dp else 13.dp, top = 7.dp, bottom = 7.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -153,7 +158,7 @@ private fun LogTabStrip(
                     style = MaterialTheme.typography.labelLarge,
                     color = if (on) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                if (on && tabs.size > 1) {
+                if (closable) {
                     Icon(
                         LogSenseIcons.Close,
                         contentDescription = "Close tab",
