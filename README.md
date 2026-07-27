@@ -25,10 +25,10 @@ launcher icon.
   standard/compact view, soft-wrap, scroll to top/bottom, tag autocomplete and restart. An Android-Studio-style
   filter query (`tag:` / `-tag:` / `msg:` / `level:` / free text) narrows the stream; a separate find bar
   searches the current view with match-case / whole-word / regex, match count and next/prev. Follow-tail with
-  jump-to-latest, and share the filtered logs as text or a `.txt` file. Tap any line for the whole of it —
-  untruncated, pretty-printed if it holds JSON, selectable, copyable, shareable. Each tag keeps its own color
-  so interleaved subsystems stay apart. Pause/resume capture from the notification. Tabs persist across runs.
-  Reads only the host app's own logs (`logcat --pid`), so **no permissions, no root, no adb** needed.
+  jump-to-latest, and share the filtered logs as text or a `.txt` file. Rows are selectable text, and each tag
+  keeps its own color so interleaved subsystems stay apart. Pause/resume capture from the notification. Tabs
+  persist across runs. Reads only the host app's own logs (`logcat --pid`), so **no permissions, no root,
+  no adb** needed.
 - **Analytics events** — `analyticsTagPatterns` maps each log tag to capture to an **optional regex**. With
   no regex (`null`), the built-in parser handles `name {json}`, `name Bundle[{k=v}]` and `name k=v, k2=v2`
   formats. For SDKs that bury the event name inside a JSON payload, give that tag a regex with `name` /
@@ -40,7 +40,8 @@ launcher icon.
 - **Signal catalog** — 40+ built-in patterns across crash · ANR · native fault · memory · lifecycle, matched
   on the live stream and surfaced four ways: a colored gutter strip and an inline pill on the line itself, a
   dot on the minimap rail down the right edge, and a **Signals** tab listing everything worth looking at in
-  this run. Tap a signal to jump straight to its line (the minimap dots jump too); tap a crash signal to open
+  this run. Tap a signal to land on its line, scrolled into context and opened in full — a wide line is
+  clipped in the list, and the part naming the culprit is usually the clipped part. Tap a crash signal to open
   its report. Conditions the app's own logcat can't show — force-stop, kill by signal, low-memory kill, first
   frame — are read from `ApplicationExitInfo` and the activity lifecycle instead of scraped from a log line,
   so they need no permission and carry a real cold-start number. Mute any built-in from the tab or Settings;

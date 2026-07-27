@@ -25,6 +25,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
@@ -220,6 +221,11 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val context = LocalContext.current
     val logScroll by core.prefs.logScroll.collectAsState()
     val snackbar = remember { SnackbarHostState() }
+
+    // Only ever set by a signal jump. Rows themselves are not tap targets: they stay selectable
+    // text, and reading a wide line by panning is fine when you already know which line you want.
+    // Arriving from a signal is the case where you don't — the part that names the culprit is
+    // usually the part off-screen.
     var sheetEntry by remember { mutableStateOf<LogEntry?>(null) }
 
     LaunchedEffect(matchPos, matchIndices, items, groups, logScroll) {
@@ -326,7 +332,6 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
                 autoFollow = !tab.paused,
                 signals = view.signals,
                 marks = view.marks,
-                onOpenLine = { sheetEntry = it },
                 onJumpTo = { id ->
                     val row = rowIndexOf(id, groups, items, logScroll)
                     if (row >= 0) scope.launch { listState.scrollToItem(row) }
@@ -748,7 +753,6 @@ private fun LogList(
     autoFollow: Boolean,
     signals: Map<Long, Signal>,
     marks: List<SignalMark>,
-    onOpenLine: (LogEntry) -> Unit,
     onJumpTo: (Long) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
@@ -781,13 +785,13 @@ private fun LogList(
             modifier = if (pan) Modifier.fillMaxHeight().horizontalScroll(hScroll) else Modifier.fillMaxSize(),
         ) {
             if (entry) {
-                items(groups, key = { it.key }) { group -> LogGroupItem(group, viewMode, matcher, signals, onOpenLine) }
+                items(groups, key = { it.key }) { group -> LogGroupItem(group, viewMode, matcher, signals) }
             } else {
                 items(items, key = { it.key }) { item ->
                     when (item) {
                         // Header spans the viewport (with a divider) except in PAN, where it pans with the rows.
                         is LogItem.Band -> TagBand(item, fillWidth = !pan)
-                        is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher, signals[item.entry.id], onOpenLine)
+                        is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher, signals[item.entry.id])
                     }
                 }
             }
@@ -827,7 +831,6 @@ private fun LogGroupItem(
     viewMode: ViewMode,
     matcher: TextMatcher?,
     signals: Map<Long, Signal>,
-    onOpenLine: (LogEntry) -> Unit,
 ) {
     val hs = rememberScrollState()
     Column(Modifier.fillMaxWidth()) {
@@ -835,7 +838,7 @@ private fun LogGroupItem(
         Column(Modifier.horizontalScroll(hs)) {
             // PAN-style rows: wrap-content, single un-wrapped line — the section's shared scroll pans them.
             group.lines.forEach { line ->
-                LogRow(line.entry, viewMode, LogScroll.PAN, matcher, signals[line.entry.id], onOpenLine)
+                LogRow(line.entry, viewMode, LogScroll.PAN, matcher, signals[line.entry.id])
             }
         }
     }
@@ -887,7 +890,6 @@ private fun LogRow(
     scroll: LogScroll,
     matcher: TextMatcher?,
     signal: Signal?,
-    onOpen: (LogEntry) -> Unit,
 ) {
     val cs = MaterialTheme.colorScheme
     val levelColor = entry.level.color()
@@ -916,7 +918,6 @@ private fun LogRow(
     Row(
         modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
             .background(rowBg)
-            .clickable { onOpen(entry) }
             .padding(horizontal = 14.dp, vertical = vPad),
         verticalAlignment = Alignment.Top,
     ) {
@@ -964,9 +965,7 @@ private fun MessageText(prefix: String?, text: AnnotatedString, color: Color, sc
     val wrap = scroll == LogScroll.WRAP
     // LINE mode gives each row's message its own horizontal scroll (gutter/timestamp stay put).
     val lineScroll = if (scroll == LogScroll.LINE) Modifier.horizontalScroll(rememberScrollState()) else Modifier
-    // Deliberately not a SelectionContainer: rows are tap targets now, and a selection container
-    // swallows the tap. Selecting, copying and sharing a line all live in the line sheet the tap opens.
-    Box(lineScroll) {
+    SelectionContainer(lineScroll) {
         Text(
             text = body,
             style = style,

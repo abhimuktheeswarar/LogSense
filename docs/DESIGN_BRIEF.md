@@ -128,10 +128,15 @@ crash, ANR or native fault ingested at launch (i.e. what ended the previous run)
 
 ### 4E. Log line detail (sheet)
 
-Tapping any log row opens a bottom sheet with the **whole** line: level, tag, full timestamp,
-pid/tid, the signal pill if it matched one, and the untruncated message — monospace, wrapped,
+Opens **when a signal jump lands**, not on an ordinary row tap. Shows the **whole** line: level,
+tag, full timestamp, pid/tid, the signal pill, and the untruncated message — monospace, wrapped,
 selectable. When the line holds JSON, a **Pretty / Raw** toggle. Actions: **Copy · Share ·
-filter by this tag**. Rows in the list are therefore *not* individually selectable text.
+filter by this tag**.
+
+Why only there: rows render one unwrapped line, so a wide line is clipped. That's fine when you
+already know which line you want — you pan to it, and rows stay selectable text. Arriving from a
+signal is the case where you *don't* know, and the clipped tail is usually the part that names the
+culprit. So the sheet is the payoff of a jump, not a general row affordance.
 
 ### 4F. Detail navigation (Events / Crashes / Signals)
 
