@@ -1,13 +1,11 @@
 package com.msabhi.logsense.internal.ui
 
 import androidx.compose.foundation.Canvas
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
@@ -34,11 +32,12 @@ internal fun SignalRail(
     onSelect: (Long) -> Unit,
 ) {
     if (marks.isEmpty()) return
+    // No track behind the dots on purpose: a full-height strip down the right edge reads as a
+    // scrollbar, which this is not. The dots alone read as markers.
     Box(
         modifier
             .fillMaxHeight()
             .width(SIGNAL_RAIL_WIDTH)
-            .background(MaterialTheme.colorScheme.surfaceContainerHighest.copy(alpha = 0.5f))
             .pointerInput(marks) {
                 detectTapGestures { offset: Offset ->
                     val height = size.height.toFloat()
