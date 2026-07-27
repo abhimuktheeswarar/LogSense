@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -173,20 +174,37 @@ private fun CrashLoadingScreen(onCancel: () -> Unit) {
 }
 
 /**
- * A tab label with a count beside it. Deliberately a tinted number rather than a filled badge: a
- * TabRow splits the width equally — about 96dp a tab on a phone — and a chip's padding doesn't fit
- * next to "Signals", while BadgedBox anchors to the content corner and so sits *on* the word.
+ * A tab label with a filled count chip beside it. This only fits because the tab row is
+ * content-sized; in an equal-width TabRow the chip's padding is squeezed to nothing and the digits
+ * wrap. (A Material BadgedBox is the wrong tool here — it anchors to the content's corner, which
+ * puts the badge on top of the word rather than beside it.)
+ *
+ * The count is bounded: the detector keeps at most 500 hits and stored crashes are capped by
+ * `maxStoredCrashes`, so this tops out around three digits. [formatCount] would compact anything
+ * past 999 to "1.2k" regardless, and the tab simply grows to fit.
  */
 @Composable
 private fun TabLabelWithCount(title: String, count: Int) {
+    val cs = MaterialTheme.colorScheme
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(title)
-        Spacer(Modifier.width(5.dp))
-        Text(
-            text = formatCount(count),
-            style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.primary,
-        )
+        Spacer(Modifier.width(6.dp))
+        Box(
+            Modifier
+                .clip(CircleShape)
+                .background(cs.primary)
+                .defaultMinSize(minWidth = 18.dp)
+                .padding(horizontal = 5.dp, vertical = 1.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = formatCount(count),
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onPrimary,
+                maxLines = 1,
+                softWrap = false,
+            )
+        }
     }
 }
 
