@@ -48,9 +48,9 @@ public class LogSenseConfig(
     public val maxSessions: Int = 10,
     /**
      * Show the "capturing" notification (requires notifications enabled by the user). It is
-     * dismissable, and staying dismissed is honoured until capture is explicitly paused or resumed —
-     * deliberately not an ongoing notification, which below Android 14 could not be swiped away and
-     * would outlive the process that posted it.
+     * dismissable, reappearing once capture has something new to report. Deliberately not an
+     * ongoing notification: below Android 14 those cannot be swiped away at all, and they outlive
+     * the process that posted them.
      */
     public val showNotification: Boolean = true,
     /** Force light/dark, or follow the system. */

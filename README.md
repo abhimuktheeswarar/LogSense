@@ -132,6 +132,17 @@ built-in — can be switched off in Settings; a muted signal stops matching enti
   ```xml
   <activity-alias android:name="com.msabhi.logsense.Launcher" tools:node="remove" />
   ```
+  Rename it when several debug builds on one device embed LogSense — otherwise the icons all read
+  "LogSense". Override the string from your app; **lead with your app's name**, because launchers cut
+  the label at roughly 12 characters (`LogSense - Foo` shows as `LogSense - …`, which distinguishes
+  nothing):
+  ```xml
+  <string name="logsense_launcher_label">Foo LogSense</string>
+  ```
+  This can't be derived automatically: a launcher label is resolved from the manifest at install
+  time, so it can't come from `LogSenseConfig`, and the manifest can only substitute the whole
+  `${applicationId}` — there's no way to take just its last segment. Every surface that *can* show
+  your app's real name already does (the notification title and the LogSense header).
 - Live logs live in memory only and are cleared on process death; analytics events and crashes are persisted
   (Room) and clearable from the UI. Signal hits live with the log buffer for the same reason — a hit whose
   line is gone is a jump that lands nowhere. Crashes, ANRs and native faults persist as crash reports.
