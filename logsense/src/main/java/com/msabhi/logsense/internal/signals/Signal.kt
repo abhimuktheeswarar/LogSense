@@ -6,12 +6,16 @@ package com.msabhi.logsense.internal.signals
  * launch, while the patterns here fire immediately, in the run where the problem happens.
  */
 internal enum class SignalCategory(val label: String, val severity: Int) {
+    // Declaration order is *display* order — the built-in categories first, the host's own signals
+    // last, so a list of categories never buries ours among theirs. [severity] is deliberately
+    // separate from it: a custom signal is something the host chose to watch for, so it outranks a
+    // lifecycle note when deciding the colour of the tab count.
     CRASH("Crash", 0),
     NATIVE("Native", 1),
     ANR("ANR", 2),
     MEMORY("Memory", 3),
-    CUSTOM("Custom", 4),
     LIFECYCLE("Lifecycle", 5),
+    CUSTOM("Custom", 4),
 }
 
 /**

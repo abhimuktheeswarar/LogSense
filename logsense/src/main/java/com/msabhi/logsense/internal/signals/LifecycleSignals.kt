@@ -22,23 +22,31 @@ internal object LifecycleSignals {
 
             private var firstFrameReported = false
 
+            // This runs on the host's main thread, inside their activity's start. Anything thrown
+            // here would surface as a crash in *their* lifecycle, at every activity transition, so
+            // the whole body is guarded — including the pre-draw callback, which runs later on the
+            // same thread and would be just as fatal.
             override fun onActivityStarted(activity: Activity) {
-                val name = activity.javaClass.name
-                if (name.startsWith(OWN_PACKAGE)) return
-                signals.record(
-                    BuiltInSignals.ACTIVITY_START,
-                    System.currentTimeMillis(),
-                    activity.javaClass.simpleName,
-                )
-                if (firstFrameReported) return
-                firstFrameReported = true
-                activity.window.decorView.doOnPreDraw {
-                    val elapsed = SystemClock.uptimeMillis() - Process.getStartUptimeMillis()
+                runCatching {
+                    val name = activity.javaClass.name
+                    if (name.startsWith(OWN_PACKAGE)) return
                     signals.record(
-                        BuiltInSignals.FIRST_FRAME,
+                        BuiltInSignals.ACTIVITY_START,
                         System.currentTimeMillis(),
-                        "${activity.javaClass.simpleName} · ${elapsed} ms after process start",
+                        activity.javaClass.simpleName,
                     )
+                    if (firstFrameReported) return
+                    firstFrameReported = true
+                    activity.window.decorView.doOnPreDraw {
+                        runCatching {
+                            val elapsed = SystemClock.uptimeMillis() - Process.getStartUptimeMillis()
+                            signals.record(
+                                BuiltInSignals.FIRST_FRAME,
+                                System.currentTimeMillis(),
+                                "${activity.javaClass.simpleName} · ${elapsed} ms after process start",
+                            )
+                        }
+                    }
                 }
             }
 

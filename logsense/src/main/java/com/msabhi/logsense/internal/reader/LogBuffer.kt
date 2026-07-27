@@ -12,7 +12,11 @@ import kotlinx.coroutines.sync.withLock
  * `toList()` + [StateFlow] emit happens in [flush], which a caller ticks at a bounded rate. This
  * keeps a burst of hundreds of lines/sec from re-copying and re-rendering the whole list per batch.
  */
-internal class LogBuffer(private val maxLines: Int) {
+internal class LogBuffer(maxLines: Int) {
+
+    /** Floored at one line. A zero or negative cap makes the trim loop in [append] keep popping past
+     *  an empty deque, so the buffer defends itself rather than trusting every caller to clamp. */
+    private val maxLines = maxLines.coerceAtLeast(1)
 
     private val deque = ArrayDeque<LogEntry>()
     private val mutex = Mutex()

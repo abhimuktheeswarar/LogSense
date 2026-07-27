@@ -53,7 +53,7 @@ internal class AnalyticsDetector(
         scope.launch {
             eventDao().insert(entities)
             // Per-session cap so a chatty current run never evicts previous sessions' events.
-            eventDao().trimCountInSession(sessionId, config.maxStoredEvents)
+            eventDao().trimCountInSession(sessionId, config.maxStoredEvents.coerceAtLeast(0))
         }
     }
 }

@@ -4,6 +4,7 @@ import android.app.ActivityManager
 import android.app.Application
 import android.content.Context
 import android.os.Build
+import android.util.Log
 import com.msabhi.logsense.LogSenseConfig
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.analytics.AnalyticsDetector
@@ -20,6 +21,7 @@ import com.msabhi.logsense.internal.reader.LogBuffer
 import com.msabhi.logsense.internal.reader.LogcatReader
 import com.msabhi.logsense.internal.signals.LifecycleSignals
 import com.msabhi.logsense.internal.signals.SignalDetector
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -37,12 +39,54 @@ internal class LogSenseCore private constructor(
     val config: LogSenseConfig,
 ) {
 
-    val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    /**
+     * Every background job runs here, and the handler is not optional: without one an uncaught
+     * exception in any `launch` reaches the thread's default handler — which by then is our own
+     * crash handler — and takes the **host app** down over a fault in a debug tool. With it, the
+     * failure is logged, the scope survives (SupervisorJob), and the app carries on.
+     */
+    val scope = CoroutineScope(
+        SupervisorJob() + Dispatchers.IO + CoroutineExceptionHandler { _, error ->
+            report("background work", error)
+        },
+    )
+
+    /**
+     * Reports an internal failure without ever becoming one. Bounded on purpose: LogSense reads its
+     * own process's logcat, so a fault that recurs per batch could otherwise log itself into a loop.
+     * The count races harmlessly across threads — it only decides how many lines get written.
+     */
+    @Volatile
+    private var reported = 0
+
+    private fun report(what: String, error: Throwable) {
+        if (reported++ < MAX_REPORTED_FAILURES) Log.e(TAG, "LogSense $what failed", error)
+    }
+
+    /** Runs [block], swallowing anything it throws. For work that must never reach the host. */
+    private inline fun guard(what: String, block: () -> Unit) {
+        try {
+            block()
+        } catch (error: Throwable) {
+            report(what, error)
+        }
+    }
+
+    /*
+     * Host-supplied numbers are clamped once, here, rather than trusted downstream. A negative value
+     * is not hypothetical mischief — it is a typo in someone's config, and each of these reaches
+     * arithmetic that would throw on one: `takeLast(-1)` fails outright, and a negative buffer cap
+     * makes the ring buffer pop an empty deque on the very first batch.
+     */
+    private val crashContextLines = config.crashContextLines.coerceIn(0, MAX_CRASH_CONTEXT_LINES)
+    private val retentionDays = config.retentionDays.coerceAtLeast(0)
+    private val maxStoredCrashes = config.maxStoredCrashes.coerceAtLeast(0)
+    private val maxSessions = config.maxSessions.coerceAtLeast(1)
 
     /** Effective in-memory buffer cap: the configured [LogSenseConfig.maxBufferedLines], but lowered
      *  on low-RAM devices so LogSense never fills the host app's heap. Never raised above the config —
      *  spare RAM is not a reason to buffer more. */
-    val bufferLimit = ramAwareBufferLimit(appContext, config.maxBufferedLines)
+    val bufferLimit = ramAwareBufferLimit(appContext, config.maxBufferedLines.coerceAtLeast(MIN_BUFFER_LINES))
     val buffer = LogBuffer(bufferLimit)
     val prefs = LogSensePrefs(appContext)
 
@@ -94,7 +138,7 @@ internal class LogSenseCore private constructor(
         // Crash handler first — nothing that runs later may crash uncaptured. Opt-out via config;
         // it always chains to the previously-installed handler, so the app's reporter still runs.
         if (config.captureJvmCrashes) {
-            CrashHandler(appContext, crashStore, config.crashContextLines, buffer).install()
+            CrashHandler(appContext, crashStore, crashContextLines, buffer).install()
         }
         Notifications.createChannels(appContext)
         (appContext as? Application)?.let { LifecycleSignals.install(it, signals) }
@@ -146,14 +190,14 @@ internal class LogSenseCore private constructor(
 
             // Age-based cleanup; event count is capped per-session by the detector (so old sessions
             // survive a busy run), and whole old sessions are pruned by maxSessions below.
-            val minTs = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(config.retentionDays.toLong())
+            val minTs = System.currentTimeMillis() - TimeUnit.DAYS.toMillis(retentionDays.toLong())
             database.eventDao().trimAge(minTs)
             crashDao.trimAge(minTs)
-            crashDao.trimCount(config.maxStoredCrashes)
+            crashDao.trimCount(maxStoredCrashes)
 
             // Prune sessions older than the newest [maxSessions] runs. If the user disabled keeping
             // past-session events/crashes, that type is narrowed to this run only.
-            val keep = sessionDao.recentIds(config.maxSessions)
+            val keep = sessionDao.recentIds(maxSessions)
             if (keep.isNotEmpty()) {
                 database.eventDao().deleteNotInSessions(if (prefs.keepPastEvents.value) keep else listOf(sessionId))
                 // A JVM crash is always ingested into the *next* run, so it looks like a "previous
@@ -190,7 +234,12 @@ internal class LogSenseCore private constructor(
         readerJob = scope.launch {
             LogcatReader(
                 buffer = buffer,
-                onBatch = { batch -> analytics.process(batch); signals.process(batch) },
+                // Guarded separately so a fault in one detector can neither stop the other nor kill
+                // the reader coroutine — losing capture entirely would be worse than losing a batch.
+                onBatch = { batch ->
+                    guard("analytics detection") { analytics.process(batch) }
+                    guard("signal detection") { signals.process(batch) }
+                },
                 captureEnabled = captureEnabled,
             ).run()
         }
@@ -240,6 +289,12 @@ internal class LogSenseCore private constructor(
     companion object {
         private const val NOTIFICATION_REFRESH_MS = 4_000L
         private const val BUFFER_FLUSH_MS = 100L
+        private const val TAG = "LogSense"
+        private const val MAX_REPORTED_FAILURES = 5
+
+        /** Floors/ceilings for host-supplied config; see the clamps at the top of the class. */
+        private const val MIN_BUFFER_LINES = 100
+        private const val MAX_CRASH_CONTEXT_LINES = 5_000
 
         @Volatile
         var instance: LogSenseCore? = null
