@@ -3,6 +3,7 @@ package com.msabhi.lsapp
 import android.Manifest
 import android.os.Build
 import android.os.Bundle
+import android.os.StrictMode
 import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
@@ -26,6 +27,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.msabhi.logsense.LogSense
 import com.msabhi.lsapp.ui.theme.LsappTheme
+import java.io.File
 
 private const val TAG = "LsApp"
 
@@ -92,6 +94,25 @@ fun DemoScreen(modifier: Modifier = Modifier) {
         }
         DemoButton("Bundle event") {
             Log.d("Analytics", "boss_defeated Bundle[{boss=merge_conflict, weapon=git_rebase, attempts=42}]")
+        }
+
+        SectionTitle("Signals")
+        DemoButton("Simulate catalog lines") {
+            Log.e("libc", "Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 4242")
+            Log.i("art", "Waiting for a blocking GC Alloc")
+            Log.i("art", "Long monitor contention with owner main (4242) at void com.msabhi.lsapp.MainActivity.onCreate()")
+            Log.w("WindowManager", "android.view.WindowLeaked: Activity com.msabhi.lsapp.MainActivity has leaked window DecorView@1a2b3c")
+            Log.w("SQLiteCursor", "Row too big to fit into CursorWindow requiredPos=0, totalRows=1")
+        }
+        DemoButton("Real jank (block main thread 900ms)") {
+            Thread.sleep(900) // the platform's own Choreographer complains about this
+        }
+        DemoButton("Real StrictMode violation (disk read on main)") {
+            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().detectDiskReads().penaltyLog().build())
+            runCatching { File("/proc/self/stat").readText() }
+        }
+        DemoButton("Custom signal: payment declined") {
+            Log.w("Checkout", "payment declined: insufficient funds")
         }
 
         SectionTitle("Crashes")

@@ -25,9 +25,10 @@ launcher icon.
   standard/compact view, soft-wrap, scroll to top/bottom, tag autocomplete and restart. An Android-Studio-style
   filter query (`tag:` / `-tag:` / `msg:` / `level:` / free text) narrows the stream; a separate find bar
   searches the current view with match-case / whole-word / regex, match count and next/prev. Follow-tail with
-  jump-to-latest, and share the filtered logs as text or a `.txt` file. Pause/resume capture from the
-  notification. Tabs persist across runs. Reads only the host app's own logs (`logcat --pid`), so
-  **no permissions, no root, no adb** needed.
+  jump-to-latest, and share the filtered logs as text or a `.txt` file. Tap any line for the whole of it —
+  untruncated, pretty-printed if it holds JSON, selectable, copyable, shareable. Each tag keeps its own color
+  so interleaved subsystems stay apart. Pause/resume capture from the notification. Tabs persist across runs.
+  Reads only the host app's own logs (`logcat --pid`), so **no permissions, no root, no adb** needed.
 - **Analytics events** — `analyticsTagPatterns` maps each log tag to capture to an **optional regex**. With
   no regex (`null`), the built-in parser handles `name {json}`, `name Bundle[{k=v}]` and `name k=v, k2=v2`
   formats. For SDKs that bury the event name inside a JSON payload, give that tag a regex with `name` /
@@ -36,6 +37,16 @@ launcher icon.
   (or plug in your own `analyticsExtractor`). QA can add more tags — each with an optional regex — live in
   Settings. Per-tag tabs, live keyword filter, the same find bar, and export one / selected / all events as
   JSON (text or file).
+- **Signal catalog** — 40+ built-in patterns across crash · ANR · native fault · memory · lifecycle, matched
+  on the live stream and surfaced four ways: a colored gutter strip and an inline pill on the line itself, a
+  dot on the minimap rail down the right edge, and a **Signals** tab listing everything worth looking at in
+  this run. Tap a signal to jump straight to its line (the minimap dots jump too); tap a crash signal to open
+  its report. Conditions the app's own logcat can't show — force-stop, kill by signal, low-memory kill, first
+  frame — are read from `ApplicationExitInfo` and the activity lifecycle instead of scraped from a log line,
+  so they need no permission and carry a real cold-start number. Mute any built-in from the tab or Settings;
+  add your own with `customSignals`, using the same query syntax as the filter field.
+- **Crash triage** — every crash report opens with the likely cause, the topmost stack frame that belongs to
+  *your* code rather than the framework, and what to check next — derived on device, no symbol upload.
 - **Crash capture** — an uncaught-exception handler writes the stacktrace, device info and the last ~200
   log lines to disk *before* the process dies, and posts a crash notification immediately (best-effort, from
   the crashing process) — tapping it opens the report once it's ingested on the next launch. ANRs and native
@@ -91,9 +102,26 @@ LogSense.init(
         showNotification = true,         // ongoing "recording" notification
         theme = ThemeMode.SYSTEM,        // or force LIGHT / DARK
         accentColor = null,              // ARGB int used as the Material primary color
+        customSignals = emptyMap(),      // label -> filter query, on top of the built-in catalog
     ),
 )
 ```
+
+#### Custom signals
+
+The built-in catalog already watches for crashes, ANRs, native faults, memory pressure and lifecycle events.
+`customSignals` adds your own, written in the same query syntax as the Logs filter field — `tag:`, `-tag:`,
+`msg:`, `level:`, bare words and `"quoted phrases"`, all ANDed:
+
+```kotlin
+customSignals = mapOf(
+    "Payment declined" to """tag:Checkout msg:declined""",
+    "Token refresh failed" to """level:W msg:"refresh token"""",
+)
+```
+
+Custom signals are checked before the built-ins, so they win a line both could match. Any signal — yours or
+built-in — can be switched off in Settings; a muted signal stops matching entirely.
 
 ### Notes
 
@@ -104,13 +132,15 @@ LogSense.init(
   <activity-alias android:name="com.msabhi.logsense.Launcher" tools:node="remove" />
   ```
 - Live logs live in memory only and are cleared on process death; analytics events and crashes are persisted
-  (Room) and clearable from the UI.
+  (Room) and clearable from the UI. Signal hits live with the log buffer for the same reason — a hit whose
+  line is gone is a jump that lands nowhere. Crashes, ANRs and native faults persist as crash reports.
 - Log lines are capped by logcat at ~4 KB — very large analytics payloads may arrive truncated.
 
 ## Sample app
 
-The `app` module demos everything: log generators for each level, the three analytics formats, a JVM crash
-button and an ANR button.
+The `app` module demos everything: log generators for each level, the three analytics formats, signal
+triggers (simulated catalog lines plus real jank and a real StrictMode violation), a custom signal, a JVM
+crash button and an ANR button.
 
 ## Modules
 

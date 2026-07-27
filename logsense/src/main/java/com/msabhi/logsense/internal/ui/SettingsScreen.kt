@@ -41,6 +41,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -64,6 +65,8 @@ import com.msabhi.logsense.R
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.LogSenseCore
 import com.msabhi.logsense.internal.reader.LogLevel
+import com.msabhi.logsense.internal.signals.BuiltInSignals
+import com.msabhi.logsense.internal.signals.SignalCategory
 import com.msabhi.logsense.internal.ui.theme.color
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -134,6 +137,11 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
                 Text("Events", style = MaterialTheme.typography.titleMedium)
                 CaptureTagsEditor(core)
+
+                // ---------- Signals ----------
+                Spacer(Modifier.height(24.dp))
+                Text("Signals", style = MaterialTheme.typography.titleMedium)
+                SignalsEditor(core)
 
                 // ---------- Theme ----------
                 Spacer(Modifier.height(24.dp))
@@ -273,6 +281,95 @@ private fun CaptureTagsEditor(core: LogSenseCore) {
             dismissButton = { TextButton(onClick = { pendingRemove = null }) { Text("Cancel") } },
         )
     }
+}
+
+/**
+ * The signal catalog, grouped by category and collapsed by default. Switching one off stops it
+ * matching at all, so a built-in that's noisy in this codebase costs nothing once it's off.
+ */
+@Composable
+private fun SignalsEditor(core: LogSenseCore) {
+    val cs = MaterialTheme.colorScheme
+    val muted by core.prefs.mutedSignals.collectAsState()
+    val all = remember { BuiltInSignals.catalog(core.config.customSignals) }
+    val byCategory = remember(all) { all.groupBy { it.category } }
+    val expanded = remember { mutableStateListOf<SignalCategory>() }
+
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text("Catalog", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.weight(1f))
+        Text(
+            "${all.count { it.id !in muted }} of ${all.size} on",
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = cs.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.height(4.dp))
+
+    SignalCategory.entries.forEach { category ->
+        val signals = byCategory[category] ?: return@forEach
+        val open = category in expanded
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { if (open) expanded.remove(category) else expanded.add(category) }
+                .padding(vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(Modifier.size(9.dp).clip(RoundedCornerShape(50)).background(category.color()))
+            Spacer(Modifier.width(12.dp))
+            Text(category.label, style = MaterialTheme.typography.bodyLarge, color = cs.onSurface)
+            Spacer(Modifier.weight(1f))
+            Text(
+                "${signals.count { it.id !in muted }}/${signals.size}",
+                style = MaterialTheme.typography.labelMedium.copy(fontFamily = FontFamily.Monospace),
+                color = cs.onSurfaceVariant,
+            )
+            Icon(
+                if (open) LogSenseIcons.ArrowUp else LogSenseIcons.ArrowDown,
+                contentDescription = null,
+                tint = cs.onSurfaceVariant,
+                modifier = Modifier.size(20.dp),
+            )
+        }
+        if (open) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                signals.forEach { signal ->
+                    key(signal.id) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(start = 21.dp, top = 4.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(Modifier.weight(1f)) {
+                                Text(signal.label, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface)
+                                Text(
+                                    text = signal.query.ifBlank { "reported by the platform" },
+                                    style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                    color = cs.onSurfaceVariant,
+                                )
+                            }
+                            Spacer(Modifier.width(12.dp))
+                            Switch(
+                                checked = signal.id !in muted,
+                                onCheckedChange = { core.prefs.setSignalMuted(signal.id, !it) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalDivider(color = cs.outlineVariant)
+    }
+
+    Spacer(Modifier.height(12.dp))
+    Text(
+        "Signals flag crashes, ANRs, native faults, memory pressure and lifecycle events in the log " +
+            "stream. Add your own with customSignals in LogSenseConfig — they use the same query " +
+            "syntax as the Logs filter.",
+        style = MaterialTheme.typography.bodySmall,
+        color = cs.onSurfaceVariant,
+    )
 }
 
 private data class TagPatternDraft(val tag: String, val pattern: String, val isNew: Boolean)

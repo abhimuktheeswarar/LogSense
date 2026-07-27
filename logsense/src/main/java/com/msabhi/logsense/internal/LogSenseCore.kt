@@ -18,6 +18,8 @@ import com.msabhi.logsense.internal.notify.Notifications
 import com.msabhi.logsense.internal.prefs.LogSensePrefs
 import com.msabhi.logsense.internal.reader.LogBuffer
 import com.msabhi.logsense.internal.reader.LogcatReader
+import com.msabhi.logsense.internal.signals.LifecycleSignals
+import com.msabhi.logsense.internal.signals.SignalDetector
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,6 +45,16 @@ internal class LogSenseCore private constructor(
     val bufferLimit = ramAwareBufferLimit(appContext, config.maxBufferedLines)
     val buffer = LogBuffer(bufferLimit)
     val prefs = LogSensePrefs(appContext)
+
+    /** Catalog matching over the live stream. Hits are in-memory and point into [buffer]. */
+    val signals = SignalDetector(config) { prefs.mutedSignals.value }
+
+    /** Set by the Signals tab to send the Logs tab to a line; cleared once the jump is consumed. */
+    val jumpToLogId = MutableStateFlow<Long?>(null)
+
+    /** Crashes ingested during *this* launch — i.e. what killed the previous run. The Signals tab
+     *  shows these alongside this run's hits; the Crashes tab keeps the full history. */
+    val launchCrashIds = MutableStateFlow<Set<Long>>(emptySet())
 
     /** Theme override; starts from the user's saved choice, else the config default. */
     val themeMode = MutableStateFlow(prefs.loadThemeMode() ?: config.theme)
@@ -85,6 +97,7 @@ internal class LogSenseCore private constructor(
             CrashHandler(appContext, crashStore, config.crashContextLines, buffer).install()
         }
         Notifications.createChannels(appContext)
+        (appContext as? Application)?.let { LifecycleSignals.install(it, signals) }
 
         detector = AnalyticsDetector(
             config,
@@ -112,9 +125,10 @@ internal class LogSenseCore private constructor(
 
             val crashDao = database.crashDao()
             val fromFiles = crashStore.ingestInto(crashDao)
-            val fromExitInfo = ExitInfoCollector.collect(appContext, crashDao, sessionDao, deviceInfo)
+            val fromExitInfo = ExitInfoCollector.collect(appContext, crashDao, sessionDao, deviceInfo, signals)
             // One crash notification only — the newest, or a summary when several arrived at once.
             val ingested = (fromFiles + fromExitInfo).sortedByDescending { it.timestamp }
+            launchCrashIds.value = ingested.mapTo(mutableSetOf()) { it.id }
             val newest = ingested.firstOrNull()
             if (newest != null) lastCrashId.value = newest.id
             if (newest != null && !crashNotificationConsumed) {
@@ -172,8 +186,13 @@ internal class LogSenseCore private constructor(
     }
 
     private fun startReader() {
+        val analytics = detector!!
         readerJob = scope.launch {
-            LogcatReader(buffer, detector!!::process, captureEnabled).run()
+            LogcatReader(
+                buffer = buffer,
+                onBatch = { batch -> analytics.process(batch); signals.process(batch) },
+                captureEnabled = captureEnabled,
+            ).run()
         }
     }
 
@@ -181,9 +200,16 @@ internal class LogSenseCore private constructor(
     fun restartReader() {
         scope.launch {
             readerJob?.cancelAndJoin()
-            buffer.clear()
+            clearLogs()
             startReader()
         }
+    }
+
+    /** Drops the captured stream. Signal hits point into the buffer, so they go with it — a hit
+     *  whose line no longer exists is a jump that lands nowhere. */
+    suspend fun clearLogs() {
+        buffer.clear()
+        signals.clear()
     }
 
     /** Pauses/resumes global capture and reflects the state in the ongoing notification. */

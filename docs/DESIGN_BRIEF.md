@@ -38,7 +38,7 @@ engineers**, used during development/QA, often for long sessions.
 
 - **Top app bar:** `[host app name (prominent) / "LogSense" (small subtitle)]` … `[Settings gear]`.
   A subtle **live/paused** indicator + line count is desirable (e.g. "● LIVE · 6.7k").
-- **Primary tabs (always):** **Logs · Events · Crashes** (3 top-level tabs).
+- **Primary tabs (always):** **Logs · Events · Crashes · Signals** (4 top-level tabs).
 - **Settings** opens as its own screen (back arrow).
 
 ## 4. Screens
@@ -97,21 +97,55 @@ Crashes captured before process death.
 
 - **Crash row:** a **type badge** (`JVM` / `ANR` / `NATIVE`), exception class name, message,
   timestamp.
-- **Crash detail** (pane/full): type, exception class, message, **full stacktrace**, **device
-  info**, and the **last ~200 log lines** of context. Reachable via a **notification deep-link**.
+- **Crash detail** (pane/full): type, exception class, message, a **triage card** (likely cause,
+  the topmost stack frame belonging to the app rather than the framework, and what to check next),
+  **full stacktrace**, **device info**, and the **last ~200 log lines** of context. Reachable via a
+  **notification deep-link**.
 - **Delete all.** Empty state: "No crashes captured. That's a good thing."
 
-### 4D. Detail navigation (Events / Crashes)
+### 4D. Signals
+
+Everything worth looking at in this run, newest first — catalog matches from the live stream plus the
+crash, ANR or native fault ingested at launch (i.e. what ended the previous run).
+
+- **Category pills:** `All` + one per category present (**Crash · ANR · Native · Memory · Lifecycle ·
+  Custom**), each with a count.
+- **Signal row:** a category-colored dot, the signal **label**, the timestamp, and a one-line
+  monospace preview of the matched line (or the crash's own app stack frame). A **mute (×)** on the
+  right switches that signal off, with undo.
+- **Tap targets:** a matched line jumps to the **Logs** tab and scrolls to it — clearing that tab's
+  filter, with undo, if the filter would hide it. A crash opens its report.
+- Signals reported by the platform rather than matched in the log (force-stop, kill by signal,
+  low-memory kill, first frame) have **no line to jump to** — the row must not look tappable.
+- **Empty state:** "Nothing flagged yet…" — this is the good outcome, so it should read calmly.
+
+**The same signals on the Logs screen (three more surfaces):**
+
+- **Gutter strip** — a signalled row's level stripe thickens and takes the category color.
+- **Inline pill** — a small colored chip carrying the signal label, next to the timestamp.
+- **Minimap rail** — a thin strip down the right edge of the log list with one dot per signal,
+  positioned by where its line sits in the stream. Tapping a dot scrolls to that line.
+
+### 4E. Log line detail (sheet)
+
+Tapping any log row opens a bottom sheet with the **whole** line: level, tag, full timestamp,
+pid/tid, the signal pill if it matched one, and the untruncated message — monospace, wrapped,
+selectable. When the line holds JSON, a **Pretty / Raw** toggle. Actions: **Copy · Share ·
+filter by this tag**. Rows in the list are therefore *not* individually selectable text.
+
+### 4F. Detail navigation (Events / Crashes / Signals)
 
 - **Narrow:** tapping a row opens a full-screen detail with a back arrow.
 - **Wide (≥840dp):** **two-pane** — list on the left, detail on the right (selected row highlighted).
 
-### 4E. Settings
+### 4G. Settings
 
 - **Theme:** segmented control **System / Light / Dark** (persisted). Caption: colors follow
   wallpaper (Material You) on Android 12+.
 - **Log level colors:** per-level (V/D/I/W/E/F) color pickers, **separate for light and dark**, with
   a "default" option and a **Reset**. Each level row shows a live swatch/preview.
+- **Signals:** the catalog grouped by category, collapsed by default, each group showing `on/total`.
+  Expanding lists every signal with its query and a switch. Muting one stops it matching entirely.
 
 ## 5. Notifications
 

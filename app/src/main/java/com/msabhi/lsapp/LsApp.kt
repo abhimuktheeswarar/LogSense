@@ -7,7 +7,14 @@ import com.msabhi.logsense.LogSenseConfig
 class LsApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // null regex = built-in parser (the sample logs plain name/json/bundle events).
-        LogSense.init(this, LogSenseConfig(analyticsTagPatterns = mapOf("Analytics" to null)))
+        LogSense.init(
+            this,
+            LogSenseConfig(
+                // null regex = built-in parser (the sample logs plain name/json/bundle events).
+                analyticsTagPatterns = mapOf("Analytics" to null),
+                // On top of the built-in catalog; same query syntax as the Logs filter field.
+                customSignals = mapOf("Payment declined" to "tag:Checkout msg:declined"),
+            ),
+        )
     }
 }

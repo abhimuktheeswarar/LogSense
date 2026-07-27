@@ -143,6 +143,8 @@ internal fun LogSenseApp(
                         detail = current,
                         onOpenDetail = { detail = it },
                         onSettings = { showSettings = true },
+                        // A signal jump lands on the Logs tab; LogsScreen consumes core.jumpToLogId.
+                        onJumpToLogs = { tab = 0; detail = null },
                     )
                 }
             }
@@ -219,6 +221,7 @@ private fun TabsScaffold(
     detail: Detail?,
     onOpenDetail: (Detail) -> Unit,
     onSettings: () -> Unit,
+    onJumpToLogs: () -> Unit,
 ) {
     Scaffold(
         topBar = {
@@ -266,7 +269,7 @@ private fun TabsScaffold(
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             TabRow(selectedTabIndex = tab) {
-                listOf("Logs", "Events", "Crashes").forEachIndexed { index, title ->
+                listOf("Logs", "Events", "Crashes", "Signals").forEachIndexed { index, title ->
                     Tab(selected = tab == index, onClick = { onTab(index) }, text = { Text(title) })
                 }
             }
@@ -283,6 +286,13 @@ private fun TabsScaffold(
                     wide = wide,
                     selectedId = (detail as? Detail.Crash)?.id,
                     onOpen = { onOpenDetail(Detail.Crash(it)) },
+                )
+                3 -> SignalsScreen(
+                    core = core,
+                    wide = wide,
+                    selectedCrashId = (detail as? Detail.Crash)?.id,
+                    onOpenCrash = { onOpenDetail(Detail.Crash(it)) },
+                    onJumpToLogs = onJumpToLogs,
                 )
             }
         }

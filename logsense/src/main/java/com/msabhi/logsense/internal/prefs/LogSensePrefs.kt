@@ -36,6 +36,16 @@ internal class LogSensePrefs(context: Context) {
      *  Merged with config's tags, which are authoritative and can't be edited here. */
     val tagPatterns = MutableStateFlow(loadTagPatterns())
 
+    /** Ids of signals the user switched off in Settings. Muted signals stop matching entirely, so a
+     *  noisy built-in costs nothing once it's off. */
+    val mutedSignals = MutableStateFlow(sp.getStringSet(KEY_MUTED_SIGNALS, null).orEmpty())
+
+    fun setSignalMuted(id: String, muted: Boolean) {
+        val updated = if (muted) mutedSignals.value + id else mutedSignals.value - id
+        mutedSignals.value = updated
+        sp.edit().putStringSet(KEY_MUTED_SIGNALS, updated).apply()
+    }
+
     fun setTagPatterns(map: Map<String, String?>) {
         tagPatterns.value = map
         sp.edit().putString(KEY_TAG_PATTERNS, encodeTagPatterns(map)).apply()
@@ -100,6 +110,7 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_KEEP_EVENTS = "keep_past_events"
         private const val KEY_KEEP_CRASHES = "keep_past_crashes"
         private const val KEY_TAG_PATTERNS = "tag_patterns"
+        private const val KEY_MUTED_SIGNALS = "muted_signals"
         val DEFAULT_TAB = LogTab(id = 0, name = "All")
     }
 }

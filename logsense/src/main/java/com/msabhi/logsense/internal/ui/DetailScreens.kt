@@ -41,6 +41,8 @@ import com.msabhi.logsense.internal.analytics.toMap
 import com.msabhi.logsense.internal.data.CrashEntity
 import com.msabhi.logsense.internal.data.EARLIER_SESSION_ID
 import com.msabhi.logsense.internal.data.EventEntity
+import com.msabhi.logsense.internal.signals.Triage
+import com.msabhi.logsense.internal.signals.triage
 import com.msabhi.logsense.internal.ui.theme.liveColor
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -173,6 +175,10 @@ private fun CrashDetailContent(core: LogSenseCore, crash: CrashEntity) {
             }
         }
 
+        val read = remember(crash.id) { triage(crash, core.appContext.packageName) }
+        Section("Triage")
+        TriageCard(read)
+
         Section("Device")
         MonoBlock(crash.deviceInfo)
         Section("Stacktrace")
@@ -181,6 +187,49 @@ private fun CrashDetailContent(core: LogSenseCore, crash: CrashEntity) {
             Section("Log context · last lines before crash")
             MonoBlock(crash.logContext, horizontallyScrollable = true)
         }
+    }
+}
+
+/**
+ * The three lines worth reading before the forty in the stack trace: the likely cause, the topmost
+ * frame that belongs to the app rather than the framework, and what to do about it.
+ */
+@Composable
+private fun TriageCard(read: Triage) {
+    val cs = MaterialTheme.colorScheme
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(cs.surfaceContainerLowest)
+            .border(1.dp, cs.outlineVariant, RoundedCornerShape(10.dp))
+            .padding(12.dp),
+    ) {
+        Text(read.cause, style = MaterialTheme.typography.bodyMedium, color = cs.onSurface)
+        read.appFrame?.let { frame ->
+            Spacer(Modifier.height(10.dp))
+            Text(
+                text = "YOUR CODE",
+                style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
+                color = cs.primary,
+            )
+            Spacer(Modifier.height(3.dp))
+            SelectionContainer {
+                Text(
+                    text = frame,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                    color = cs.onSurface,
+                )
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = "NEXT",
+            style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.8.sp),
+            color = cs.primary,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(read.nextSteps, style = MaterialTheme.typography.bodySmall, color = cs.onSurfaceVariant)
     }
 }
 
@@ -206,7 +255,7 @@ private fun SessionLine(core: LogSenseCore, sessionId: String) {
 }
 
 @Composable
-private fun Section(title: String) {
+internal fun Section(title: String) {
     Spacer(Modifier.height(20.dp))
     Text(
         text = title.uppercase(),
@@ -217,7 +266,7 @@ private fun Section(title: String) {
 }
 
 @Composable
-private fun MonoBlock(text: String, horizontallyScrollable: Boolean = false) {
+internal fun MonoBlock(text: String, horizontallyScrollable: Boolean = false) {
     val cs = MaterialTheme.colorScheme
     val inner = if (horizontallyScrollable) Modifier.horizontalScroll(rememberScrollState()) else Modifier
     Box(

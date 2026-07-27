@@ -52,4 +52,22 @@ public class LogSenseConfig(
     public val theme: ThemeMode = ThemeMode.SYSTEM,
     /** ARGB color int used as the accent (Material primary) color; null = LogSense default. */
     public val accentColor: Int? = null,
+    /**
+     * Extra signals to watch for, as `label -> filter query`, on top of the built-in catalog
+     * (crashes, ANRs, native faults, memory pressure and lifecycle events, all detected out of the
+     * box). Matches show up in the Signals tab and are highlighted in the log stream.
+     *
+     * The query is the same syntax as the Logs filter field — `tag:`, `-tag:`, `msg:`, `level:`,
+     * bare words and `"quoted phrases"`, all ANDed:
+     *
+     * ```
+     * customSignals = mapOf(
+     *     "Payment declined" to """tag:Checkout msg:declined""",
+     *     "Token refresh failed" to """level:W msg:"refresh token"""",
+     * )
+     * ```
+     *
+     * Custom signals are checked before the built-ins, so they win a line both could match.
+     */
+    public val customSignals: Map<String, String> = emptyMap(),
 )

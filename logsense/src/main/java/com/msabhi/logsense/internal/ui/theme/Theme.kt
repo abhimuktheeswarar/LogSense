@@ -15,6 +15,7 @@ import androidx.compose.ui.platform.LocalContext
 import com.msabhi.logsense.ThemeMode
 import com.msabhi.logsense.internal.logs.LevelColorOverride
 import com.msabhi.logsense.internal.reader.LogLevel
+import com.msabhi.logsense.internal.signals.SignalCategory
 
 internal val LocalDarkTheme = staticCompositionLocalOf { false }
 
@@ -71,6 +72,48 @@ private fun resolveLevelColor(level: LogLevel, dark: Boolean, override: LevelCol
 /** Semantic "capture is live" green — deliberately separate from the Material You accent. */
 @Composable
 internal fun liveColor(): Color = if (LocalDarkTheme.current) Color(0xFF7DDB8F) else Color(0xFF2E7D32)
+
+/** Signal categories borrow the level palette, so a severity reads the same everywhere. */
+@Composable
+internal fun SignalCategory.color(): Color = when (this) {
+    SignalCategory.CRASH, SignalCategory.NATIVE -> LogLevel.FATAL.color()
+    SignalCategory.ANR -> LogLevel.WARN.color()
+    SignalCategory.MEMORY -> LogLevel.ERROR.color()
+    SignalCategory.LIFECYCLE -> LogLevel.DEBUG.color()
+    SignalCategory.CUSTOM -> MaterialTheme.colorScheme.primary
+}
+
+/**
+ * A stable color per tag, so the same subsystem keeps the same hue for the whole session and you can
+ * tell interleaved tags apart at a glance. Severity stays on the row stripe and message, not here.
+ */
+@Composable
+internal fun tagColor(tag: String): Color {
+    val palette = if (LocalDarkTheme.current) TAG_COLORS_DARK else TAG_COLORS_LIGHT
+    return palette[(tag.hashCode() and 0x7FFFFFFF) % palette.size]
+}
+
+private val TAG_COLORS_DARK = listOf(
+    Color(0xFF7FD1C1), // teal
+    Color(0xFFB9A2F0), // violet
+    Color(0xFFF0B27A), // amber
+    Color(0xFF8FC7F5), // sky
+    Color(0xFFE79AC4), // pink
+    Color(0xFFA9D18E), // moss
+    Color(0xFFF2C46B), // gold
+    Color(0xFFCBA6A6), // clay
+)
+
+private val TAG_COLORS_LIGHT = listOf(
+    Color(0xFF00796B),
+    Color(0xFF5E35B1),
+    Color(0xFFB2560D),
+    Color(0xFF1565C0),
+    Color(0xFFAD1457),
+    Color(0xFF33691E),
+    Color(0xFF8D6E00),
+    Color(0xFF8D4E4E),
+)
 
 /** Built-in logcat color coding (light / dark pairs) — used when the user hasn't overridden a level. */
 internal fun defaultLevelColor(level: LogLevel, dark: Boolean): Color = when (level) {
