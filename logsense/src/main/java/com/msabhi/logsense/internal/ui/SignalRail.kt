@@ -6,13 +6,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import kotlin.math.abs
@@ -21,27 +18,27 @@ import kotlin.math.abs
 internal data class RailMark(val fraction: Float, val color: Color, val entryId: Long)
 
 /**
- * A minimap of the signals in the whole captured stream: one dot per signalled line, placed by where
- * that line sits from oldest (top) to newest (bottom). Tapping a dot jumps to its line.
+ * A minimap of the signals in the whole captured stream: one dot per signalled row, placed by where
+ * that row sits from oldest (top) to newest (bottom). Tapping a dot jumps to its line.
  *
- * The dots are fixed — they describe the buffer, not the viewport, so they don't move as you scroll.
- * That only reads as sensible next to the faint bracket showing the slice you're currently looking
- * at: without it a static overlay looks decorative, with it you can see at a glance whether a signal
- * is above or below you.
+ * The dots are fixed on purpose — they describe the buffer, not the viewport, so they don't move as
+ * you scroll. Rows already carry their own gutter stripe and pill; dots that scrolled with the
+ * content would only repeat that.
  *
- * Deliberately no full-height track behind the dots: a strip down the right edge reads as a
- * scrollbar, which this is not.
+ * Two things deliberately absent:
+ * - **No track.** A full-height strip down the right edge reads as a scrollbar, which this is not.
+ * - **No viewport indicator.** A proportional "you are here" marker is sized visible-rows over
+ *   total-rows, and the buffer runs to [com.msabhi.logsense.LogSenseConfig.maxBufferedLines] — at
+ *   the 50k default that is a fraction of a pixel. It degenerates by construction, so the rail says
+ *   where the signals are and leaves where-you-are to the jump-to-latest control and the Signals tab.
  */
 @Composable
 internal fun SignalRail(
     marks: List<RailMark>,
-    rowCount: Int,
-    listState: LazyListState,
     modifier: Modifier = Modifier,
     onSelect: (Long) -> Unit,
 ) {
     if (marks.isEmpty()) return
-    val viewportColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f)
     Box(
         modifier
             .fillMaxHeight()
@@ -57,29 +54,11 @@ internal fun SignalRail(
     ) {
         Canvas(Modifier.fillMaxHeight().width(SIGNAL_RAIL_WIDTH).padding(vertical = DOT_RADIUS)) {
             val usable = size.height
-
-            // listState is read here, inside the draw lambda, so scrolling only redraws the rail —
-            // reading it in the composable body would recompose the whole list on every frame.
-            val visible = listState.layoutInfo.visibleItemsInfo
-            val firstRow = visible.firstOrNull()?.index
-            val lastRow = visible.lastOrNull()?.index
-            if (firstRow != null && lastRow != null && rowCount > 1) {
-                val span = (rowCount - 1).toFloat()
-                val x = VIEWPORT_INSET.toPx()
-                drawLine(
-                    color = viewportColor,
-                    start = Offset(x, (firstRow / span).coerceIn(0f, 1f) * usable),
-                    end = Offset(x, (lastRow / span).coerceIn(0f, 1f) * usable),
-                    strokeWidth = VIEWPORT_WIDTH.toPx(),
-                    cap = StrokeCap.Round,
-                )
-            }
-
             marks.forEach { mark ->
                 drawCircle(
                     color = mark.color,
                     radius = DOT_RADIUS.toPx(),
-                    center = Offset(x = size.width - DOT_RADIUS.toPx(), y = mark.fraction.coerceIn(0f, 1f) * usable),
+                    center = Offset(x = size.width / 2f, y = mark.fraction.coerceIn(0f, 1f) * usable),
                 )
             }
         }
@@ -87,7 +66,5 @@ internal fun SignalRail(
 }
 
 /** Also the width the log list reserves on its right edge so text never runs under the rail. */
-internal val SIGNAL_RAIL_WIDTH = 14.dp
+internal val SIGNAL_RAIL_WIDTH = 12.dp
 private val DOT_RADIUS = 3.dp
-private val VIEWPORT_WIDTH = 2.dp
-private val VIEWPORT_INSET = 2.dp

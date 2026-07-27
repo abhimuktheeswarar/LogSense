@@ -819,8 +819,6 @@ private fun LogList(
         }
         SignalRail(
             marks = railMarks,
-            rowCount = count,
-            listState = listState,
             modifier = Modifier.align(Alignment.CenterEnd),
             onSelect = onJumpTo,
         )
