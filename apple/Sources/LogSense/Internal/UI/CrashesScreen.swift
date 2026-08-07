@@ -63,7 +63,7 @@ internal struct CrashesScreen: View {
             .toolbar {
                 if let onDone {
                     ToolbarItem(placement: .topBarLeading) {
-                        BackButton(action: onDone)
+                        BackButton(label: core.hostName, action: onDone)
                     }
                 }
                 if !state.crashes.isEmpty {

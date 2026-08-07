@@ -72,21 +72,30 @@ internal struct LogsScreen: View {
     var body: some View {
         let rows = displayed
         let matches = matchIds
-        VStack(spacing: 0) {
-            header(rows: rows)
-            if state.status == .paused { pausedBanner }
-            content(rows: rows, matches: matches)
+        NavigationStack {
+            VStack(spacing: 0) {
+                header(rows: rows)
+                if state.status == .paused { pausedBanner }
+                content(rows: rows, matches: matches)
+            }
+            // The custom header replaces the bar visually, but the title still feeds the pushed
+            // screen's "‹ Logs" back item — continuing the task pushes, per the design.
+            .navigationTitle("Logs")
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(isPresented: $showSettings) {
+                SettingsScreen(core: core)
+            }
+            .safeAreaInset(edge: .bottom) {
+                if findActive { findBar(matches: matches) }
+            }
         }
-        .safeAreaInset(edge: .bottom) {
-            if findActive { findBar(matches: matches) }
+        .onChange(of: showSettings) { open in
+            if !open { savedFilters = Prefs.savedFilters() }
         }
         .sheet(item: sheetSelection) { entry in
             LogLineSheet(entry: entry, hit: hitsByEntryId[entry.id]) { tag in
                 query = "tag:\"\(tag)\""
             }
-        }
-        .sheet(isPresented: $showSettings, onDismiss: { savedFilters = Prefs.savedFilters() }) {
-            SettingsScreen(core: core)
         }
         .alert("Save filter", isPresented: $savingFilter) {
             TextField("Name", text: $newFilterName)
@@ -113,22 +122,12 @@ internal struct LogsScreen: View {
 
     private func header(rows: [LogEntry]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .bottom) {
-                HStack(alignment: .top, spacing: 10) {
-                    if let onDone {
-                        // The overlay window has no system chrome; a standard back chevron at the
-                        // standard place is the exit.
-                        BackButton(action: onDone)
-                    }
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("LOGSENSE")
-                            .font(.system(size: 11.5, weight: .semibold))
-                            .kerning(1)
-                            .foregroundStyle(.secondary)
-                        Text(core.hostName)
-                            .font(.system(size: 34, weight: .bold))
-                            .lineLimit(1)
-                    }
+            // One nav row: the labelled back item to the host and the trailing actions share it;
+            // the large title sits alone beneath. Stacking a second header row would cost 44pt on
+            // a screen whose job is fitting log lines.
+            HStack(alignment: .center) {
+                if let onDone {
+                    BackButton(label: core.hostName, action: onDone)
                 }
                 Spacer()
                 HStack(spacing: 8) {
@@ -181,6 +180,15 @@ internal struct LogsScreen: View {
                             .background(Color(.tertiarySystemFill), in: Circle())
                     }
                 }
+            }
+            // Root titled by tab: the back item carries the host name, freeing the title slot.
+            VStack(alignment: .leading, spacing: 5) {
+                Text("LOGSENSE")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .kerning(1)
+                    .foregroundStyle(.secondary)
+                Text("Logs")
+                    .font(.system(size: 34, weight: .bold))
             }
             statusRow(rows: rows)
             filterField
@@ -782,18 +790,24 @@ private struct RawRow: View {
 
 // MARK: - shared bits
 
-/// The way out of the overlay window — a standard back chevron, shown on every tab.
+/// The way out of the overlay window: a standard back item **labelled with its destination** —
+/// the host app's name — shown on every root. A ✕ says the thing disappears without saying where
+/// you land; one step backwards to the host is what dismissal means here.
 internal struct BackButton: View {
+    let label: String
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "chevron.backward")
-                .font(.system(size: 17, weight: .semibold))
-                .frame(width: 34, height: 34)
-                .background(Color(.tertiarySystemFill), in: Circle())
+            HStack(spacing: 3) {
+                Image(systemName: "chevron.backward")
+                    .font(.system(size: 17, weight: .semibold))
+                Text(label)
+                    .font(.system(size: 17))
+                    .lineLimit(1)
+            }
         }
-        .accessibilityLabel("Back to app")
+        .accessibilityLabel("Back to \(label)")
     }
 }
 

@@ -3,9 +3,9 @@ import SwiftUI
 
 /// Grouped inset lists per the design: appearance, capture facts, events capture tags (config tags
 /// locked, QA tags editable), the signal catalog with per-signal switches, saved filters.
+/// Pushed from Logs ("‹ Logs" comes from the navigation title), never its own stack.
 internal struct SettingsScreen: View {
     let core: LogSenseCore
-    @Environment(\.dismiss) private var dismiss
     @AppStorage(Prefs.themeKey) private var themeRaw = ""
     @State private var muted = Prefs.mutedSignals()
     @State private var qaTags = Prefs.analyticsTags()
@@ -15,7 +15,6 @@ internal struct SettingsScreen: View {
     @State private var newTagPattern = ""
 
     var body: some View {
-        NavigationStack {
             List {
                 Section {
                     Picker("Theme", selection: $themeRaw) {
@@ -137,11 +136,6 @@ internal struct SettingsScreen: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
-            }
             .alert("Add capture tag", isPresented: $addingTag) {
                 TextField("Tag (log category)", text: $newTag)
                 TextField("Regex (optional)", text: $newTagPattern)
@@ -160,7 +154,6 @@ internal struct SettingsScreen: View {
             } message: {
                 Text("Lines with this tag are captured as analytics events from now on.")
             }
-        }
     }
 
     private var catalog: [Signal] {
