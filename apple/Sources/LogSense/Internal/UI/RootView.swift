@@ -30,6 +30,10 @@ internal struct RootView: View {
                 .tabItem { Label("Crashes", systemImage: "exclamationmark.triangle") }
                 .badge(state.crashes.count)
                 .tag(RootTab.crashes)
+            SignalsScreen(core: core, onDone: onDone)
+                .tabItem { Label("Signals", systemImage: "waveform.path.ecg") }
+                .badge(state.signalHits.count)
+                .tag(RootTab.signals)
         }
         .tint(core.config.accentColor ?? .accentColor)
         .preferredColorScheme(colorScheme(ThemeMode(rawValue: themeRaw) ?? core.config.theme))

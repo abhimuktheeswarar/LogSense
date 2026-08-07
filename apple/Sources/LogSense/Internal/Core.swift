@@ -27,10 +27,12 @@ internal final class LogSenseState: ObservableObject {
     @Published var events: [StoredEvent] = []
     /// A tab something outside the UI asked for (a notification tap); consumed by RootView.
     @Published var requestedTab: RootTab?
+    /// A log line the Signals tab asked to reveal; consumed by LogsScreen (jump + line sheet).
+    @Published var revealEntryId: Int64?
 }
 
 internal enum RootTab {
-    case logs, events, crashes
+    case logs, events, crashes, signals
 }
 
 /// The process singleton every part of LogSense hangs off. No DI framework — this is passed down

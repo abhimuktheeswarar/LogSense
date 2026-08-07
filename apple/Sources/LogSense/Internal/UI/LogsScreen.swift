@@ -22,6 +22,8 @@ internal struct LogsScreen: View {
     @State private var findIndex = 0
     @State private var selectedEntry: LogEntry?
     @State private var showSettings = false
+    /// An entry id the Signals tab asked to scroll to; consumed by the list's scroll proxy.
+    @State private var revealTarget: Int64?
 
     // Android's tab model: each tab owns its filter, min level and density, persisted across runs.
     // "All" (id 0) is the one tab that can't be closed — a stable home to come back to.
@@ -130,6 +132,18 @@ internal struct LogsScreen: View {
             }
         }
         .onAppear { selectTab(activeTabId) }
+        .onChange(of: state.revealEntryId) { id in
+            // A Signals-tab jump: land on All (it shows everything), stop following the tail,
+            // and open the line's sheet/inspector.
+            guard let id else { return }
+            state.revealEntryId = nil
+            selectTab(0)
+            autoscroll = false
+            revealTarget = id
+            if let entry = state.snapshot.first(where: { $0.id == id }) {
+                selectedEntry = entry
+            }
+        }
         .onChange(of: query) { _ in writeBackActiveTab() }
         .onChange(of: minLevel) { _ in writeBackActiveTab() }
         .onChange(of: viewMode) { _ in writeBackActiveTab() }
@@ -642,6 +656,12 @@ internal struct LogsScreen: View {
                     .onChange(of: findIndex) { _ in
                         if findActive, matches.indices.contains(findIndex) {
                             withAnimation { proxy.scrollTo(matches[findIndex], anchor: .center) }
+                        }
+                    }
+                    .onChange(of: revealTarget) { target in
+                        if let target {
+                            withAnimation { proxy.scrollTo(target, anchor: .center) }
+                            revealTarget = nil
                         }
                     }
                     .overlay(alignment: .bottomTrailing) {
