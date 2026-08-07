@@ -15,7 +15,6 @@ internal struct SettingsScreen: View {
     @AppStorage(Prefs.themeKey) private var themeRaw = ""
     @State private var muted = Prefs.mutedSignals()
     @State private var qaTags = Prefs.analyticsTags()
-    @State private var savedFilters = Prefs.savedFilters()
     @State private var addingTag = false
     @State private var newTag = ""
     @State private var newTagPattern = ""
@@ -133,25 +132,6 @@ internal struct SettingsScreen: View {
                     Text("A switched-off signal stops matching and stops being reported. The routine ones ship muted so a healthy run flags nothing.")
                 }
 
-                if !savedFilters.isEmpty {
-                    Section("Saved filters") {
-                        ForEach(savedFilters, id: \.id) { filter in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(filter.name).font(.system(size: 15))
-                                Text(filterSummary(filter))
-                                    .font(.system(size: 11, design: .monospaced))
-                                    .foregroundStyle(.tertiary)
-                            }
-                            .swipeActions {
-                                Button("Delete", role: .destructive) {
-                                    savedFilters.removeAll { $0.id == filter.id }
-                                    Prefs.setSavedFilters(savedFilters)
-                                }
-                            }
-                        }
-                    }
-                }
-
                 Section {
                 } footer: {
                     // Like Android's AboutFooter: no visual affordance — tapping anywhere on the
@@ -217,11 +197,5 @@ internal struct SettingsScreen: View {
         )
     }
 
-    private func filterSummary(_ filter: SavedFilter) -> String {
-        var parts: [String] = []
-        if filter.filter.minLevel != .debug { parts.append("level:\(filter.filter.minLevel.letter)") }
-        if !filter.filter.query.isEmpty { parts.append(filter.filter.query) }
-        return parts.isEmpty ? "no filter" : parts.joined(separator: " ")
-    }
 }
 #endif

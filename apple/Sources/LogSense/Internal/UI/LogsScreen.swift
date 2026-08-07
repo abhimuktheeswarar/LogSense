@@ -22,9 +22,17 @@ internal struct LogsScreen: View {
     @State private var findIndex = 0
     @State private var selectedEntry: LogEntry?
     @State private var showSettings = false
-    @State private var savingFilter = false
-    @State private var newFilterName = ""
-    @State private var savedFilters = Prefs.savedFilters()
+
+    // Android's tab model: each tab owns its filter, min level and density, persisted across runs.
+    // "All" (id 0) is the one tab that can't be closed — a stable home to come back to.
+    @State private var tabs: [SavedFilter] = LogsScreen.loadTabs()
+    @State private var activeTabId: Int64 = 0
+    /// Per-tab clear watermarks — runtime-only, like Android: entry ids restart with the reader,
+    /// so persisting one would be meaningless next run.
+    @State private var clearedAt: [Int64: Int64] = [:]
+    @State private var addingTab = false
+    @State private var renamingTab = false
+    @State private var tabNameDraft = ""
 
     init(core: LogSenseCore, onDone: (() -> Void)?) {
         self.core = core
@@ -35,11 +43,19 @@ internal struct LogsScreen: View {
     // ponytail: filtering re-runs on each ~1 Hz publish over the whole buffer. Fine at real
     // volumes for a debug tool; move off-main behind a task if it ever shows in a profile.
     private var displayed: [LogEntry] {
-        let visible = Array(state.snapshot.since(state.clearedAtId))
+        let visible = Array(state.snapshot.since(clearedAt[activeTabId] ?? 0))
         let filter = LogFilter(minLevel: minLevel, query: query)
         if query.isEmpty && minLevel == .debug { return visible }
         let predicate = LogQuery.compile(filter)
         return visible.filter(predicate)
+    }
+
+    private static func loadTabs() -> [SavedFilter] {
+        var loaded = Prefs.savedFilters()
+        if !loaded.contains(where: { $0.id == 0 }) {
+            loaded.insert(SavedFilter(id: 0, name: "All"), at: 0)
+        }
+        return loaded
     }
 
     private var matcher: TextMatcher { TextMatcher.from(findQuery) }
@@ -89,32 +105,119 @@ internal struct LogsScreen: View {
                 if findActive { findBar(matches: matches) }
             }
         }
-        .onChange(of: showSettings) { open in
-            if !open { savedFilters = Prefs.savedFilters() }
-        }
+        .onAppear { selectTab(activeTabId) }
+        .onChange(of: query) { _ in writeBackActiveTab() }
+        .onChange(of: minLevel) { _ in writeBackActiveTab() }
+        .onChange(of: viewMode) { _ in writeBackActiveTab() }
         .sheet(item: sheetSelection) { entry in
             LogLineSheet(entry: entry, hit: hitsByEntryId[entry.id]) { tag in
                 query = "tag:\"\(tag)\""
             }
         }
-        .alert("Save filter", isPresented: $savingFilter) {
-            TextField("Name", text: $newFilterName)
-            Button("Save") {
-                let name = newFilterName.trimmingCharacters(in: .whitespaces)
+        .alert("New tab", isPresented: $addingTab) {
+            TextField("Name", text: $tabNameDraft)
+            Button("Add") {
+                let name = tabNameDraft.trimmingCharacters(in: .whitespaces)
                 guard !name.isEmpty else { return }
                 let next = SavedFilter(
-                    id: (savedFilters.map(\.id).max() ?? 0) + 1,
+                    id: (tabs.map(\.id).max() ?? 0) + 1,
                     name: name,
                     filter: LogFilter(minLevel: minLevel, query: query),
                     viewMode: viewMode
                 )
-                savedFilters.append(next)
-                Prefs.setSavedFilters(savedFilters)
-                newFilterName = ""
+                tabs.append(next)
+                Prefs.setSavedFilters(tabs)
+                selectTab(next.id)
+                tabNameDraft = ""
             }
-            Button("Cancel", role: .cancel) { newFilterName = "" }
+            Button("Cancel", role: .cancel) { tabNameDraft = "" }
         } message: {
-            Text("Saves the current query, minimum level and density for one-tap reuse.")
+            Text("Starts from the current filter, level and density; the tab keeps its own from here on.")
+        }
+        .alert("Rename tab", isPresented: $renamingTab) {
+            TextField("Name", text: $tabNameDraft)
+            Button("Rename") {
+                let name = tabNameDraft.trimmingCharacters(in: .whitespaces)
+                if !name.isEmpty, let index = tabs.firstIndex(where: { $0.id == activeTabId }) {
+                    tabs[index].name = name
+                    Prefs.setSavedFilters(tabs)
+                }
+                tabNameDraft = ""
+            }
+            Button("Cancel", role: .cancel) { tabNameDraft = "" }
+        }
+    }
+
+    // MARK: tabs
+
+    private func selectTab(_ id: Int64) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        activeTabId = id
+        query = tab.filter.query
+        minLevel = tab.filter.minLevel
+        viewMode = tab.viewMode
+    }
+
+    /// The active tab owns the filter state — edits write through and persist, like Android.
+    private func writeBackActiveTab() {
+        guard let index = tabs.firstIndex(where: { $0.id == activeTabId }) else { return }
+        tabs[index].filter = LogFilter(minLevel: minLevel, query: query)
+        tabs[index].viewMode = viewMode
+        Prefs.setSavedFilters(tabs)
+    }
+
+    private func closeTab(_ id: Int64) {
+        guard id != 0 else { return }
+        tabs.removeAll { $0.id == id }
+        Prefs.setSavedFilters(tabs)
+        if activeTabId == id { selectTab(0) }
+    }
+
+    private var tabsRow: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 7) {
+                ForEach(tabs, id: \.id) { tab in
+                    let isActive = tab.id == activeTabId
+                    Button {
+                        selectTab(tab.id)
+                    } label: {
+                        Text(tab.name)
+                            .font(.system(size: 13, weight: isActive ? .semibold : .medium))
+                            .padding(.horizontal, 13)
+                            .padding(.vertical, 6)
+                            .background(isActive ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
+                            .foregroundStyle(isActive ? .white : .primary)
+                    }
+                    .buttonStyle(.plain)
+                    .contextMenu {
+                        Button {
+                            tabNameDraft = tab.name
+                            selectTab(tab.id)
+                            renamingTab = true
+                        } label: {
+                            Label("Rename…", systemImage: "pencil")
+                        }
+                        if tab.id != 0 {
+                            Button(role: .destructive) {
+                                closeTab(tab.id)
+                            } label: {
+                                Label("Close tab", systemImage: "xmark")
+                            }
+                        }
+                    }
+                }
+                Button {
+                    tabNameDraft = ""
+                    addingTab = true
+                } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 7)
+                        .background(Color(.tertiarySystemFill), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
@@ -148,31 +251,17 @@ internal struct LogsScreen: View {
                         }
                         Toggle("Wrap long lines", isOn: $wrap)
                         Toggle("Autoscroll", isOn: $autoscroll)
-                        if !savedFilters.isEmpty {
-                            Menu("Saved filters") {
-                                ForEach(savedFilters, id: \.id) { saved in
-                                    Button(saved.name) {
-                                        query = saved.filter.query
-                                        minLevel = saved.filter.minLevel
-                                        viewMode = saved.viewMode
-                                    }
-                                }
-                            }
-                        }
-                        if isFiltering {
-                            Button {
-                                savingFilter = true
-                            } label: {
-                                Label("Save filter…", systemImage: "bookmark")
-                            }
-                        }
                         ShareLink(item: shareText(rows)) { Label("Share…", systemImage: "square.and.arrow.up") }
                         Button {
                             showSettings = true
                         } label: {
                             Label("Settings", systemImage: "gearshape")
                         }
-                        Button("Clear", role: .destructive) { core.clear() }
+                        // Clears this tab only — a watermark, not a buffer wipe: other tabs still
+                        // show the lines and signal hits still point at real entries.
+                        Button("Clear tab", role: .destructive) {
+                            clearedAt[activeTabId] = state.snapshot.last?.id ?? 0
+                        }
                     } label: {
                         Image(systemName: "ellipsis")
                             .font(.system(size: 15, weight: .semibold))
@@ -192,6 +281,7 @@ internal struct LogsScreen: View {
             }
             statusRow(rows: rows)
             filterField
+            tabsRow
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)

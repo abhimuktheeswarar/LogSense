@@ -17,8 +17,6 @@ internal final class LogSenseState: ObservableObject {
     @Published var totalReceived = 0
     @Published var status: CaptureStatus = .waiting
     @Published var bufferedWhilePaused = 0
-    /// Newest entry id at the moment the stream was cleared; the UI shows only lines after this.
-    @Published var clearedAtId: Int64 = 0
     /// When paused, the wall-clock time of the newest published line ("Stream frozen at …").
     @Published var frozenAtMs: Int64 = 0
     /// Stored crash reports, newest first, across sessions.
@@ -442,10 +440,6 @@ internal final class LogSenseCore {
         #endif
     }
 
-    @MainActor
-    func clear() {
-        state.clearedAtId = state.snapshot.last?.id ?? 0
-    }
 
     private static let pollIntervalNs: UInt64 = 1_000_000_000 // tuning constant; measured in Phase 1
 
