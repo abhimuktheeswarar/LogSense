@@ -1323,14 +1323,25 @@ internal struct EmptyStateView: View {
 }
 
 /// The design's "capture continues" reassurance line for the Events, Crashes and Signals tabs:
-/// pulsing dot + Live + a per-tab detail. Logs keeps its richer three-state status row.
+/// status dot + a per-tab detail. Tracks the same global CaptureStatus as the Logs row — the
+/// app-bar pause is global (Android behaviour), so no tab may claim Live while paused.
 internal struct LiveStatusRow: View {
+    let status: CaptureStatus
     let detail: String
 
     var body: some View {
         HStack(spacing: 7) {
-            PulsingDot(color: .green, active: true)
-            Text("Live").foregroundStyle(.green).fontWeight(.semibold)
+            switch status {
+            case .waiting:
+                PulsingDot(color: .orange, active: false)
+                Text("Connecting").foregroundStyle(.orange).fontWeight(.semibold)
+            case .live:
+                PulsingDot(color: .green, active: true)
+                Text("Live").foregroundStyle(.green).fontWeight(.semibold)
+            case .paused:
+                PulsingDot(color: .orange, active: false)
+                Text("Paused").foregroundStyle(.orange).fontWeight(.semibold)
+            }
             Text("· \(detail)")
         }
         .font(.system(size: 12.5, weight: .medium))

@@ -30,7 +30,7 @@ internal struct CrashesScreen: View {
         NavigationStack {
             // In-layout like Signals, not a top safeAreaInset — an inset swallows the large title.
             VStack(spacing: 0) {
-                LiveStatusRow(detail: "\(state.crashes.count.formatted()) captured")
+                LiveStatusRow(status: state.status, detail: "\(state.crashes.count.formatted()) captured")
                 crashesList
             }
             .navigationTitle("Crashes")

@@ -42,7 +42,7 @@ internal struct SignalsScreen: View {
             // Pills live in the layout, not a top safeAreaInset — an inset there swallows the
             // large navigation title.
             VStack(spacing: 0) {
-                LiveStatusRow(detail: "\(audibleHits.count.formatted()) flagged")
+                LiveStatusRow(status: state.status, detail: "\(audibleHits.count.formatted()) flagged")
                 if categories.count > 1 { categoryPills }
                 signalsList
             }

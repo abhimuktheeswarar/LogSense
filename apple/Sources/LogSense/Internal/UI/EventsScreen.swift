@@ -49,7 +49,7 @@ internal struct EventsScreen: View {
             // In-layout like Signals, not a top safeAreaInset — an always-present inset
             // swallows the large navigation title.
             VStack(spacing: 0) {
-                LiveStatusRow(detail: "\(state.events.count.formatted()) captured · \(tags.count) \(tags.count == 1 ? "tag" : "tags")")
+                LiveStatusRow(status: state.status, detail: "\(state.events.count.formatted()) captured · \(tags.count) \(tags.count == 1 ? "tag" : "tags")")
                 if tags.count > 1 { tagPills }
                 if state.events.isEmpty {
                     EmptyStateView(
