@@ -66,15 +66,26 @@ public struct LogSenseLiveActivity: Widget {
             LockScreenCard(context: context)
                 .activityBackgroundTint(context.state.phase == .crashed ? Color(hex: 0xFF453A).opacity(0.2) : nil)
         } dynamicIsland: { context in
+            // The expanded island has a hard height budget (~160pt): glyph/name/clock in the slim
+            // top regions, tiles + buttons below. The latest-line ticker is Lock-Screen-only.
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    ExpandedHeader(context: context)
+                    GlyphSquare(phase: context.state.phase)
+                        .padding(.leading, 4)
+                }
+                DynamicIslandExpandedRegion(.center) {
+                    Text(context.attributes.hostName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .lineLimit(1)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     ExpandedTrailing(context: context)
+                        .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     ExpandedBottom(context: context)
+                        .padding(.horizontal, 4)
+                        .padding(.top, 6)
                 }
             } compactLeading: {
                 if context.state.phase == .crashed {
@@ -168,6 +179,7 @@ private struct ExpandedHeader: View {
     }
 }
 
+/// The trailing slot is narrow on the expanded island — a dot and the clock, nothing more.
 @available(iOS 16.2, *)
 private struct ExpandedTrailing: View {
     let context: ActivityViewContext<LogSenseActivityAttributes>
@@ -179,47 +191,43 @@ private struct ExpandedTrailing: View {
                 Text(crash.type)
                     .font(.system(size: 10.5, weight: .bold, design: .monospaced))
                     .kerning(0.5)
-                    .padding(.horizontal, 9)
+                    .padding(.horizontal, 8)
                     .padding(.vertical, 4)
                     .background(Color(hex: 0xFF453A).opacity(0.18), in: RoundedRectangle(cornerRadius: 7))
                     .foregroundStyle(Color(hex: 0xFF453A))
             }
         default:
-            HStack(spacing: 6) {
+            HStack(spacing: 5) {
                 Circle()
                     .fill(context.state.phase == .paused ? Color(hex: 0xFF9F0A) : Color(hex: 0x30D158))
                     .frame(width: 7, height: 7)
-                Text(context.state.phase == .paused ? "Paused" : "Live")
-                    .font(.system(size: 12.5, weight: .semibold))
-                    .foregroundStyle(context.state.phase == .paused ? Color(hex: 0xFF9F0A) : Color(hex: 0x30D158))
                 SessionClock(start: context.state.sessionStart)
-                    .font(.system(size: 12.5, weight: .medium, design: .monospaced))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: 44)
+                    .frame(maxWidth: 56)
             }
         }
     }
 }
 
+/// Fits the island's height budget: tiles + buttons, or the crash headline + buttons. The frame
+/// ticker belongs to the Lock Screen card, where there is room.
 @available(iOS 16.2, *)
 private struct ExpandedBottom: View {
     let context: ActivityViewContext<LogSenseActivityAttributes>
 
     var body: some View {
-        VStack(spacing: 11) {
+        VStack(spacing: 9) {
             if context.state.phase == .crashed, let crash = context.state.crash {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(crash.title)
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: 18, weight: .bold))
                         .lineLimit(1)
                     if !crash.detail.isEmpty {
                         Text(crash.detail)
-                            .font(.system(size: 12.5))
+                            .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
-                    }
-                    if !crash.topFrame.isEmpty {
-                        Ticker(text: crash.topFrame, tint: Color(hex: 0xFF453A).opacity(0.12))
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -228,9 +236,6 @@ private struct ExpandedBottom: View {
                     StatTile(value: context.state.lines, label: "lines")
                     StatTile(value: context.state.events, label: "events")
                     StatTile(value: context.state.crashes, label: "crashes")
-                }
-                if !context.state.latestLine.isEmpty {
-                    Ticker(text: context.state.latestLine, tint: .white.opacity(0.08))
                 }
             }
             ActivityButtons(context: context)
@@ -260,7 +265,9 @@ internal struct LockScreenCard: View {
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
             }
-            .padding(14)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
             .opacity(0.75)
         } else {
             VStack(alignment: .leading, spacing: 10) {
@@ -294,8 +301,11 @@ internal struct LockScreenCard: View {
                     }
                 }
                 ActivityButtons(context: context)
+                    .padding(.top, 2)
             }
-            .padding(14)
+            .padding(.horizontal, 16)
+            .padding(.top, 14)
+            .padding(.bottom, 16)
         }
     }
 }
