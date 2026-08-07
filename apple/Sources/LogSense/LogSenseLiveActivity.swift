@@ -84,8 +84,6 @@ public struct LogSenseLiveActivity: Widget {
                 }
                 DynamicIslandExpandedRegion(.bottom) {
                     ExpandedBottom(context: context)
-                        .padding(.horizontal, 4)
-                        .padding(.top, 6)
                 }
             } compactLeading: {
                 if context.state.phase == .crashed {
@@ -204,7 +202,8 @@ private struct ExpandedTrailing: View {
                 SessionClock(start: context.state.sessionStart)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: 56)
+                    // Natural width, not a capped frame — a squeezed timer Text renders dashes.
+                    .fixedSize(horizontal: true, vertical: false)
             }
         }
     }
@@ -217,11 +216,11 @@ private struct ExpandedBottom: View {
     let context: ActivityViewContext<LogSenseActivityAttributes>
 
     var body: some View {
-        VStack(spacing: 9) {
+        VStack(spacing: 8) {
             if context.state.phase == .crashed, let crash = context.state.crash {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(crash.title)
-                        .font(.system(size: 18, weight: .bold))
+                        .font(.system(size: 17, weight: .bold))
                         .lineLimit(1)
                     if !crash.detail.isEmpty {
                         Text(crash.detail)
@@ -233,12 +232,12 @@ private struct ExpandedBottom: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
                 HStack(spacing: 8) {
-                    StatTile(value: context.state.lines, label: "lines")
-                    StatTile(value: context.state.events, label: "events")
-                    StatTile(value: context.state.crashes, label: "crashes")
+                    StatTile(value: context.state.lines, label: "lines", slim: true)
+                    StatTile(value: context.state.events, label: "events", slim: true)
+                    StatTile(value: context.state.crashes, label: "crashes", slim: true)
                 }
             }
-            ActivityButtons(context: context)
+            ActivityButtons(context: context, slim: true)
         }
     }
 }
@@ -336,11 +335,13 @@ private struct GlyphSquare: View {
 private struct StatTile: View {
     let value: Int
     let label: String
+    /// The island's height budget is tight; the Lock Screen card has room.
+    var slim: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
+        VStack(alignment: .leading, spacing: slim ? 2 : 3) {
             Text(value.formatted())
-                .font(.system(size: 17, weight: .bold))
+                .font(.system(size: slim ? 15 : 17, weight: .bold))
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
             Text(label)
@@ -349,7 +350,7 @@ private struct StatTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, 8)
+        .padding(.vertical, slim ? 5 : 8)
         .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 11))
     }
 }
@@ -376,25 +377,26 @@ private struct Ticker: View {
 @available(iOS 16.2, *)
 private struct ActivityButtons: View {
     let context: ActivityViewContext<LogSenseActivityAttributes>
+    var slim: Bool = false
 
     var body: some View {
         if #available(iOS 17.0, *) {
             HStack(spacing: 9) {
                 switch context.state.phase {
                 case .crashed:
-                    Button(intent: LogSenseKeepRecordingIntent()) { Label01("Keep recording") }
+                    Button(intent: LogSenseKeepRecordingIntent()) { Label01("Keep recording", slim: slim) }
                         .buttonStyle(.plain)
-                    Button(intent: LogSenseOpenIntent(destination: .crashes)) { Label01("Open report", prominent: Color(hex: 0xFF453A)) }
+                    Button(intent: LogSenseOpenIntent(destination: .crashes)) { Label01("Open report", prominent: Color(hex: 0xFF453A), slim: slim) }
                         .buttonStyle(.plain)
                 case .paused:
-                    Button(intent: LogSenseStopCaptureIntent()) { Label01("Stop") }
+                    Button(intent: LogSenseStopCaptureIntent()) { Label01("Stop", slim: slim) }
                         .buttonStyle(.plain)
-                    Button(intent: LogSenseResumeCaptureIntent()) { Label01("Resume", prominent: Color(hex: 0xFF9F0A), dark: true) }
+                    Button(intent: LogSenseResumeCaptureIntent()) { Label01("Resume", prominent: Color(hex: 0xFF9F0A), dark: true, slim: slim) }
                         .buttonStyle(.plain)
                 case .recording:
-                    Button(intent: LogSensePauseCaptureIntent()) { Label01("Pause") }
+                    Button(intent: LogSensePauseCaptureIntent()) { Label01("Pause", slim: slim) }
                         .buttonStyle(.plain)
-                    Button(intent: LogSenseOpenIntent(destination: .logs)) { Label01("Open logs", prominent: Color(hex: 0x0A84FF)) }
+                    Button(intent: LogSenseOpenIntent(destination: .logs)) { Label01("Open logs", prominent: Color(hex: 0x0A84FF), slim: slim) }
                         .buttonStyle(.plain)
                 case .ended:
                     EmptyView()
@@ -409,19 +411,22 @@ private struct Label01: View {
     let text: String
     let prominent: Color?
     let dark: Bool
+    let slim: Bool
 
-    init(_ text: String, prominent: Color? = nil, dark: Bool = false) {
+    init(_ text: String, prominent: Color? = nil, dark: Bool = false, slim: Bool = false) {
         self.text = text
         self.prominent = prominent
         self.dark = dark
+        self.slim = slim
     }
 
     var body: some View {
         Text(text)
-            .font(.system(size: 13.5, weight: .semibold))
+            .font(.system(size: slim ? 13 : 13.5, weight: .semibold))
             .foregroundStyle(prominent != nil ? (dark ? .black : .white) : .white)
+            .lineLimit(1)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 9)
+            .padding(.vertical, slim ? 7 : 9)
             .background(prominent ?? .white.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
     }
 }
