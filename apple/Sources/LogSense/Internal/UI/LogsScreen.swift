@@ -25,6 +25,19 @@ internal struct LogsScreen: View {
     /// An entry id the Signals tab asked to scroll to; consumed by the list's scroll proxy.
     @State private var revealTarget: Int64?
 
+    /// Per-tab scroll positions — "a tab keeps its own filter, scroll position and pause state."
+    /// The list doesn't expose its viewport, so rows report themselves in and out of it; the
+    /// tracker is a class behind @State on purpose: identity survives re-renders, and mutations
+    /// don't invalidate the view (a Set<Int64> churning per scroll must not re-render the screen).
+    @State private var visibleRows = VisibleRows()
+    @State private var scrollAnchor: [Int64: Int64] = [:]
+    /// The anchor to restore after a tab switch; consumed by the list's scroll proxy.
+    @State private var restoreAnchor: Int64?
+
+    private final class VisibleRows {
+        var ids: Set<Int64> = []
+    }
+
     // Android's tab model: each tab owns its filter, min level and density, persisted across runs.
     // "All" (id 0) is the one tab that can't be closed — a stable home to come back to.
     @State private var tabs: [SavedFilter] = LogsScreen.loadTabs()
@@ -191,10 +204,21 @@ internal struct LogsScreen: View {
 
     private func selectTab(_ id: Int64) {
         guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        let switching = id != activeTabId
+        if switching {
+            // Remember where the outgoing tab was; the topmost visible row is its position.
+            if let top = visibleRows.ids.min() {
+                scrollAnchor[activeTabId] = top
+            }
+            visibleRows.ids.removeAll()
+        }
         activeTabId = id
         query = tab.filter.query
         minLevel = tab.filter.minLevel
         viewMode = tab.viewMode
+        if switching, !autoscroll, let anchor = scrollAnchor[id] {
+            restoreAnchor = anchor
+        }
     }
 
     /// The active tab owns the filter state — edits write through and persist, like Android.
@@ -627,6 +651,8 @@ internal struct LogsScreen: View {
                         ForEach(rows) { entry in
                             row(entry, hit: hits[entry.id])
                                 .id(entry.id)
+                                .onAppear { visibleRows.ids.insert(entry.id) }
+                                .onDisappear { visibleRows.ids.remove(entry.id) }
                                 .contentShape(Rectangle())
                                 .onTapGesture { selectedEntry = entry }
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
@@ -674,6 +700,13 @@ internal struct LogsScreen: View {
                             revealTarget = nil
                         }
                     }
+                    .onChange(of: restoreAnchor) { anchor in
+                        // Restoring a tab's position — instant, no animation, like Android.
+                        if let anchor {
+                            proxy.scrollTo(anchor, anchor: .top)
+                            restoreAnchor = nil
+                        }
+                    }
                     .overlay(alignment: .bottomTrailing) {
                         VStack(spacing: 10) {
                             fabButton("arrow.up") {
@@ -687,8 +720,11 @@ internal struct LogsScreen: View {
                                     // The onChange(of: autoscroll) hook does the scrolling.
                                     autoscroll = true
                                 }
+                                .transition(.scale(scale: 0.6).combined(with: .opacity))
                             }
                         }
+                        // Value-scoped, one-shot — the safe kind of animation (see PulsingDot).
+                        .animation(.spring(duration: 0.3), value: autoscroll)
                         .padding(.trailing, 18)
                         .padding(.bottom, 14)
                     }
