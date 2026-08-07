@@ -202,8 +202,10 @@ private struct ExpandedTrailing: View {
                 SessionClock(start: context.state.sessionStart)
                     .font(.system(size: 12, weight: .medium, design: .monospaced))
                     .foregroundStyle(.secondary)
-                    // Natural width, not a capped frame — a squeezed timer Text renders dashes.
-                    .fixedSize(horizontal: true, vertical: false)
+                    // A FIXED frame, deliberately: the timer Text's ideal width is effectively
+                    // unbounded (fixedSize blanks the whole activity past this node), and a
+                    // too-tight maxWidth squeezes the digits into dashes. 56pt fits h:mm:ss.
+                    .frame(width: 56, alignment: .trailing)
             }
         }
     }
