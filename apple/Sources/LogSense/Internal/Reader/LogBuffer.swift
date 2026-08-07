@@ -33,13 +33,28 @@ internal final class LogBuffer {
         return snapshotStorage
     }
 
-    func append(_ entries: [LogEntry]) {
-        guard !entries.isEmpty else { return }
+    /// Entry ids are (re)stamped here, under the lock — the one place both capture sources
+    /// serialize through — so ids are monotonic in storage order by construction, which is what
+    /// `since()`'s binary search and jump-to-line depend on. Returns the stamped entries so
+    /// detectors downstream see the same ids the buffer holds.
+    private var nextId: Int64 = 1
+
+    @discardableResult
+    func append(_ entries: [LogEntry]) -> [LogEntry] {
+        guard !entries.isEmpty else { return [] }
         lock.lock(); defer { lock.unlock() }
-        storage.append(contentsOf: entries)
+        let stamped = entries.map { entry in
+            let id = nextId
+            nextId += 1
+            return LogEntry(id: id, timeMs: entry.timeMs, pid: entry.pid, tid: entry.tid,
+                            level: entry.level, subsystem: entry.subsystem, tag: entry.tag,
+                            message: entry.message)
+        }
+        storage.append(contentsOf: stamped)
         if storage.count > maxLines { storage.removeFirst(storage.count - maxLines) }
-        totalReceivedStorage += entries.count
+        totalReceivedStorage += stamped.count
         dirty = true
+        return stamped
     }
 
     /// Attaches a continuation line to the newest entry (multi-line log output).
