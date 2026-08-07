@@ -10,6 +10,7 @@ internal struct LogsScreen: View {
 
     @ObservedObject private var state: LogSenseState
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var query = ""
     @State private var minLevel: LogLevel = .debug
@@ -49,6 +50,16 @@ internal struct LogsScreen: View {
         return displayed.filter { m.matches($0.message) || m.matches($0.tag) }.map(\.id)
     }
 
+    /// Regular width shows the line inspector beside the stream; compact presents a sheet.
+    private var isRegular: Bool { hSize == .regular }
+
+    private var sheetSelection: Binding<LogEntry?> {
+        Binding(
+            get: { isRegular ? nil : selectedEntry },
+            set: { selectedEntry = $0 }
+        )
+    }
+
     /// Hits keyed by the line they matched, for the gutter/pill on rows.
     private var hitsByEntryId: [Int64: SignalHit] {
         var out: [Int64: SignalHit] = [:]
@@ -69,7 +80,7 @@ internal struct LogsScreen: View {
         .safeAreaInset(edge: .bottom) {
             if findActive { findBar(matches: matches) }
         }
-        .sheet(item: $selectedEntry) { entry in
+        .sheet(item: sheetSelection) { entry in
             LogLineSheet(entry: entry, hit: hitsByEntryId[entry.id]) { tag in
                 query = "tag:\"\(tag)\""
             }
@@ -330,44 +341,60 @@ internal struct LogsScreen: View {
             emptyState(rows: rows).frame(maxHeight: .infinity)
         } else {
             let hits = hitsByEntryId
-            ScrollViewReader { proxy in
-                List {
-                    ForEach(rows) { entry in
-                        row(entry, hit: hits[entry.id])
-                            .id(entry.id)
-                            .contentShape(Rectangle())
-                            .onTapGesture { selectedEntry = entry }
-                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
-                            .listRowSeparator(viewMode == .standard ? .visible : .hidden)
-                            .listRowBackground(rowBackground(entry, matches: matches))
-                    }
-                }
-                .listStyle(.plain)
-                .environment(\.defaultMinListRowHeight, 10)
-                .onChange(of: state.snapshot.count) { _ in
-                    if autoscroll, state.status != .paused, let last = rows.last {
-                        proxy.scrollTo(last.id, anchor: .bottom)
-                    }
-                }
-                .onChange(of: findIndex) { _ in
-                    if findActive, matches.indices.contains(findIndex) {
-                        withAnimation { proxy.scrollTo(matches[findIndex], anchor: .center) }
-                    }
-                }
-                .overlay(alignment: .bottomTrailing) {
-                    if !autoscroll {
-                        jumpToLatestButton {
-                            autoscroll = true
-                            if let last = rows.last { proxy.scrollTo(last.id, anchor: .bottom) }
+            HStack(spacing: 0) {
+                ScrollViewReader { proxy in
+                    List {
+                        ForEach(rows) { entry in
+                            row(entry, hit: hits[entry.id])
+                                .id(entry.id)
+                                .contentShape(Rectangle())
+                                .onTapGesture { selectedEntry = entry }
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .listRowSeparator(viewMode == .standard ? .visible : .hidden)
+                                .listRowBackground(rowBackground(entry, matches: matches))
                         }
                     }
+                    .listStyle(.plain)
+                    .environment(\.defaultMinListRowHeight, 10)
+                    .onChange(of: state.snapshot.count) { _ in
+                        if autoscroll, state.status != .paused, let last = rows.last {
+                            proxy.scrollTo(last.id, anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: findIndex) { _ in
+                        if findActive, matches.indices.contains(findIndex) {
+                            withAnimation { proxy.scrollTo(matches[findIndex], anchor: .center) }
+                        }
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        if !autoscroll {
+                            jumpToLatestButton {
+                                autoscroll = true
+                                if let last = rows.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                            }
+                        }
+                    }
+                    .simultaneousGesture(DragGesture().onChanged { _ in autoscroll = false })
                 }
-                .simultaneousGesture(DragGesture().onChanged { _ in autoscroll = false })
+                if isRegular, let selected = selectedEntry,
+                   let index = rows.firstIndex(where: { $0.id == selected.id }) {
+                    Divider()
+                    LineInspector(
+                        entry: selected,
+                        hit: hitsByEntryId[selected.id],
+                        neighbors: Array(rows[max(0, index - 2)...min(rows.count - 1, index + 2)]),
+                        onFilterTag: { tag in query = "tag:\"\(tag)\"" },
+                        onClose: { selectedEntry = nil }
+                    )
+                }
             }
         }
     }
 
     private func rowBackground(_ entry: LogEntry, matches: [Int64]) -> Color {
+        if isRegular, selectedEntry?.id == entry.id {
+            return Color.accentColor.opacity(0.12)
+        }
         if findActive, matches.indices.contains(findIndex), matches[findIndex] == entry.id {
             return Color.accentColor.opacity(0.12)
         }
@@ -390,6 +417,9 @@ internal struct LogsScreen: View {
     private func row(_ entry: LogEntry, hit: SignalHit?) -> some View {
         let base = Group {
             switch viewMode {
+            case .standard where isRegular:
+                // Regular width: the design's iPad stream row — time, chip, 92pt tag column, message.
+                PadRow(entry: entry, wrap: wrap, highlight: findActive ? matcher : nil)
             case .standard:
                 StandardRow(entry: entry, wrap: wrap, highlight: findActive ? matcher : nil, hit: hit)
             case .compact:
@@ -526,6 +556,154 @@ private struct StandardRow: View {
             return Text(Format.highlighted(entry.message, matcher: highlight))
         }
         return Text(entry.message)
+    }
+}
+
+/// The design's regular-width stream row: time, level chip, a fixed 92pt tag column, message.
+private struct PadRow: View {
+    let entry: LogEntry
+    let wrap: Bool
+    let highlight: TextMatcher?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 11) {
+            Text(Format.time(entry.timeMs))
+                .font(.system(size: 11.5, design: .monospaced))
+                .foregroundStyle(.tertiary)
+            Text(String(entry.level.letter))
+                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                .foregroundStyle(entry.level.color(scheme))
+                .frame(width: 19, height: 19)
+                .background(entry.level.chipFill(scheme), in: RoundedRectangle(cornerRadius: 6))
+            Text(entry.tag)
+                .font(.system(size: 12, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(width: 92, alignment: .leading)
+            messageText
+                .font(.system(size: 12.5, design: .monospaced))
+                .lineLimit(wrap ? nil : 1)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 8)
+    }
+
+    private var messageText: Text {
+        if let highlight {
+            return Text(Format.highlighted(entry.message, matcher: highlight))
+        }
+        return Text(entry.message)
+    }
+}
+
+/// The design's line inspector: a 324pt panel beside the stream on regular width — the line in
+/// full, its neighbors for context, and the two actions that follow from a line.
+private struct LineInspector: View {
+    let entry: LogEntry
+    let hit: SignalHit?
+    let neighbors: [LogEntry]
+    let onFilterTag: (String) -> Void
+    let onClose: () -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    caption("Line inspector")
+                    Spacer()
+                    Button(action: onClose) {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 26, height: 26)
+                            .background(Color(.tertiarySystemFill), in: Circle())
+                    }
+                }
+                HStack(spacing: 9) {
+                    Text(String(entry.level.letter))
+                        .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                        .foregroundStyle(entry.level.color(scheme))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(entry.level.chipFill(scheme), in: RoundedRectangle(cornerRadius: 6))
+                    Text("\(Format.time(entry.timeMs)) · pid \(entry.pid) · tid \(entry.tid)")
+                        .font(.system(size: 12.5))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.top, 14)
+                Text(entry.tag)
+                    .font(.system(size: 19, weight: .semibold))
+                    .padding(.top, 10)
+                if let hit {
+                    HStack(spacing: 6) {
+                        Circle().fill(hit.signal.category.color).frame(width: 6, height: 6)
+                        Text(hit.signal.label)
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(hit.signal.category.color)
+                    }
+                    .padding(.top, 6)
+                }
+                Text(entry.message)
+                    .font(.system(size: 12, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(13)
+                    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                    .padding(.top, 12)
+
+                caption("Around this line").padding(.top, 16)
+                VStack(spacing: 0) {
+                    ForEach(neighbors) { neighbor in
+                        HStack(spacing: 9) {
+                            Text(Format.time(neighbor.timeMs).suffix(6))
+                                .foregroundStyle(.tertiary)
+                            Text(String(neighbor.level.letter))
+                                .fontWeight(.bold)
+                                .foregroundStyle(neighbor.level.color(scheme))
+                            Text(neighbor.message)
+                                .lineLimit(1)
+                                .foregroundStyle(neighbor.id == entry.id ? .primary : .secondary)
+                        }
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 7)
+                        if neighbor.id != neighbors.last?.id { Divider().padding(.leading, 12) }
+                    }
+                }
+                .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+                .padding(.top, 9)
+
+                HStack(spacing: 9) {
+                    inspectorButton("Copy line") { UIPasteboard.general.string = entry.message }
+                    inspectorButton("Filter this tag") { onFilterTag(entry.tag) }
+                }
+                .padding(.top, 14)
+            }
+            .padding(18)
+        }
+        .frame(width: 324)
+        .background(Color(.systemBackground))
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.system(size: 12.5, weight: .semibold))
+            .kerning(0.6)
+            .foregroundStyle(.secondary)
+    }
+
+    private func inspectorButton(_ label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13.5, weight: .semibold))
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 11))
+        }
     }
 }
 
