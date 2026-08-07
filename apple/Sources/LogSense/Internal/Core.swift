@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 #if os(iOS)
+import UIKit
 import UserNotifications
 #endif
 
@@ -26,6 +27,12 @@ internal final class LogSenseState: ObservableObject {
     @Published var signalHits: [SignalHit] = []
     /// Stored analytics events, newest first, across sessions.
     @Published var events: [StoredEvent] = []
+    /// A tab something outside the UI asked for (a notification tap); consumed by RootView.
+    @Published var requestedTab: RootTab?
+}
+
+internal enum RootTab {
+    case logs, events, crashes
 }
 
 /// The process singleton every part of LogSense hangs off. No DI framework — this is passed down
@@ -64,6 +71,9 @@ internal final class LogSenseCore {
         let core = LogSenseCore(config: config)
         shared = core
         core.startCapture()
+        #if os(iOS)
+        core.installEntryPoints()
+        #endif
     }
 
     @MainActor
@@ -200,7 +210,7 @@ internal final class LogSenseCore {
             content.body = record.message ?? "Open LogSense for the report."
             content.subtitle = "LogSense"
             center.add(UNNotificationRequest(
-                identifier: "logsense.crash", content: content, trigger: nil
+                identifier: Self.crashNotificationId, content: content, trigger: nil
             ))
         }
         #endif
@@ -303,4 +313,70 @@ internal final class LogSenseCore {
     }
 
     private static let pollIntervalNs: UInt64 = 1_000_000_000 // tuning constant; measured in Phase 1
+
+    static let shortcutType = "com.msabhi.logsense.open"
+    static let crashNotificationId = "logsense.crash"
+
+    #if os(iOS)
+    /// The iOS stand-ins for Android's launcher icon and notification entry points. A second Home
+    /// Screen icon is impossible on iOS, so the icon-based entry is a long-press quick action —
+    /// registered here with no host code; the tap itself must be forwarded by the host's scene
+    /// delegate (`LogSense.handleShortcut`), because iOS only delivers it there.
+    @MainActor
+    fileprivate func installEntryPoints() {
+        var items = UIApplication.shared.shortcutItems ?? []
+        if !items.contains(where: { $0.type == Self.shortcutType }) {
+            items.append(UIApplicationShortcutItem(
+                type: Self.shortcutType,
+                localizedTitle: "Open LogSense",
+                localizedSubtitle: nil,
+                icon: UIApplicationShortcutIcon(systemImageName: "list.bullet.rectangle"),
+                userInfo: nil
+            ))
+            UIApplication.shared.shortcutItems = items
+        }
+        // Notification taps go to the center's delegate. Most apps own that delegate — they forward
+        // to LogSense.handleNotificationResponse. When nobody claims the slot by the time the app
+        // is active, LogSense takes it so the crash alert deep-links with zero host code. Checked
+        // at didBecomeActive, after any host setup has had its chance; the host setting a delegate
+        // later still simply wins.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main
+        ) { _ in
+            let center = UNUserNotificationCenter.current()
+            if center.delegate == nil {
+                center.delegate = LogSenseNotificationDelegate.shared
+            }
+        }
+    }
+    #endif
 }
+
+#if os(iOS)
+/// Claimed only when the host never set a notification delegate. Foreign notifications keep the
+/// no-delegate default behavior (silent in foreground); LogSense's crash alert banners and
+/// deep-links.
+internal final class LogSenseNotificationDelegate: NSObject, UNUserNotificationCenterDelegate {
+    static let shared = LogSenseNotificationDelegate()
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification,
+        withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void
+    ) {
+        let isOurs = notification.request.identifier == LogSenseCore.crashNotificationId
+        completionHandler(isOurs ? [.banner, .list] : [])
+    }
+
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse,
+        withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        Task { @MainActor in
+            LogSense.handleNotificationResponse(response)
+            completionHandler()
+        }
+    }
+}
+#endif

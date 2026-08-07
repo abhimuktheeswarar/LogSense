@@ -1,5 +1,9 @@
 import SwiftUI
 import os
+#if os(iOS)
+import UIKit
+import UserNotifications
+#endif
 
 public enum LogSense {
 
@@ -29,6 +33,49 @@ public enum LogSense {
     @MainActor
     public static func present() {
         LogSenseWindow.present()
+    }
+
+    /// Handles the "Open LogSense" Home Screen quick action (registered automatically by `start`).
+    /// iOS delivers quick-action taps to *your* scene delegate, so forward them:
+    ///
+    /// ```swift
+    /// func windowScene(_ scene: UIWindowScene, performActionFor item: UIApplicationShortcutItem,
+    ///                  completionHandler: @escaping (Bool) -> Void) {
+    ///     if LogSense.handleShortcut(item) { completionHandler(true); return }
+    ///     // your own shortcuts…
+    /// }
+    /// ```
+    /// Returns true when the item was LogSense's (and the UI was opened), false otherwise.
+    @MainActor
+    @discardableResult
+    public static func handleShortcut(_ item: UIApplicationShortcutItem) -> Bool {
+        guard item.type == LogSenseCore.shortcutType else { return false }
+        present()
+        return true
+    }
+
+    /// Handles a tap on a LogSense notification (the crash alert), opening the report list.
+    /// If your app has its own `UNUserNotificationCenter` delegate, forward responses:
+    ///
+    /// ```swift
+    /// func userNotificationCenter(_ center: UNUserNotificationCenter,
+    ///                             didReceive response: UNNotificationResponse,
+    ///                             withCompletionHandler completionHandler: @escaping () -> Void) {
+    ///     if LogSense.handleNotificationResponse(response) { completionHandler(); return }
+    ///     // your own handling…
+    /// }
+    /// ```
+    /// When your app sets no delegate at all, LogSense claims the vacant slot itself and this
+    /// forwarding is unnecessary. Returns true when the notification was LogSense's.
+    @MainActor
+    @discardableResult
+    public static func handleNotificationResponse(_ response: UNNotificationResponse) -> Bool {
+        guard response.notification.request.identifier == LogSenseCore.crashNotificationId else {
+            return false
+        }
+        present()
+        LogSenseCore.shared?.state.requestedTab = .crashes
+        return true
     }
     #endif
 }

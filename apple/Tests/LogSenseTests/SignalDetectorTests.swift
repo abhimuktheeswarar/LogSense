@@ -49,6 +49,24 @@ final class SignalDetectorTests: XCTestCase {
         )
     }
 
+    func testDetectsSwiftUIRuntimeWarnings() {
+        XCTAssertEqual(
+            ["ui.foreach_ids", "ui.state_during_update", "ui.publish_during_update"],
+            idsFor(
+                entry("SwiftUI", "ForEach<Array<Item>, Int, Text>: the ID 5 occurs multiple times within the collection, this will give undefined results!"),
+                entry("SwiftUI", "Modifying state during view update, this will cause undefined behavior."),
+                entry("SwiftUI", "Publishing changes from within view updates is not allowed, this will cause undefined behavior.")
+            )
+        )
+    }
+
+    func testDetectsUnbalancedBackgroundTask() {
+        XCTAssertEqual(
+            ["lifecycle.background_task"],
+            idsFor(entry("UIKit", "Can't end BackgroundTask: no background task exists with identifier 42"))
+        )
+    }
+
     func testDetectsATSBlockAndTimeout() {
         XCTAssertEqual(
             ["net.ats", "net.timeout"],

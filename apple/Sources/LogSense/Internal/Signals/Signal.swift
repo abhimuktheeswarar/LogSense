@@ -90,6 +90,12 @@ internal enum BuiltInSignals {
                query: #"msg:"AttributeGraph: cycle detected""#),
         Signal(id: "ui.main_thread_checker", label: "UI API off the main thread", category: .ui,
                query: #"msg:"Main Thread Checker""#),
+        Signal(id: "ui.foreach_ids", label: "Duplicate ForEach IDs", category: .ui,
+               query: #"msg:"occurs multiple times within the collection""#),
+        Signal(id: "ui.state_during_update", label: "State modified during view update", category: .ui,
+               query: #"msg:"Modifying state during view update""#),
+        Signal(id: "ui.publish_during_update", label: "Publishing during view update", category: .ui,
+               query: #"msg:"Publishing changes from within view updates""#),
 
         // ---- network ---------------------------------------------------------------------
         Signal(id: "net.ats", label: "Blocked by App Transport Security", category: .network,
@@ -106,6 +112,10 @@ internal enum BuiltInSignals {
                query: "sub:coredata level:E"),
         Signal(id: "data.keychain", label: "Keychain error", category: .data,
                query: #"msg:"SecOSStatusWith""#),
+
+        // ---- lifecycle ---------------------------------------------------------------------
+        Signal(id: "lifecycle.background_task", label: "Unbalanced background task", category: .lifecycle,
+               query: #"msg:"Can't end BackgroundTask""#),
 
         // ---- crash (generic catch-all, after everything more specific) ---------------------
         Signal(id: "crash.fault", label: "Fault logged", category: .crash, query: "level:F"),

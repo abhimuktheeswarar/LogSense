@@ -16,18 +16,35 @@ internal struct RootView: View {
         self.state = core.state
     }
 
+    @State private var selection: RootTab = .logs
+
     var body: some View {
-        TabView {
+        TabView(selection: $selection) {
             LogsScreen(core: core, onDone: onDone)
                 .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
+                .tag(RootTab.logs)
             EventsScreen(core: core, onDone: onDone)
                 .tabItem { Label("Events", systemImage: "chart.bar.xaxis") }
+                .tag(RootTab.events)
             CrashesScreen(core: core, onDone: onDone)
                 .tabItem { Label("Crashes", systemImage: "exclamationmark.triangle") }
                 .badge(state.crashes.count)
+                .tag(RootTab.crashes)
         }
         .tint(core.config.accentColor ?? .accentColor)
         .preferredColorScheme(colorScheme(ThemeMode(rawValue: themeRaw) ?? core.config.theme))
+        .onAppear {
+            if let requested = state.requestedTab {
+                selection = requested
+                state.requestedTab = nil
+            }
+        }
+        .onChange(of: state.requestedTab) { requested in
+            if let requested {
+                selection = requested
+                state.requestedTab = nil
+            }
+        }
     }
 
     private func colorScheme(_ mode: ThemeMode) -> ColorScheme? {

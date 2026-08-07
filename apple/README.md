@@ -27,9 +27,21 @@ Call it at the **top of** `application(_:didFinishLaunchingWithOptions:)` (or yo
 is already installed — starting LogSense first means both fire; starting it second is fine too
 (LogSense chains the same way), but first is the ordering that never surprises anyone.
 
-Open the UI with `LogSense.present()` (its own overlay window above your app), or embed
-`LogSenseView` wherever you like — a debug menu, a hidden gesture of your choosing. LogSense
-deliberately claims no global gesture: shake, in particular, is often taken.
+## Opening LogSense
+
+iOS allows exactly one Home Screen icon per app, so Android's second-launcher-icon entry has no
+equivalent. The entry points, closest-first:
+
+- **Long-press the app icon** → the "Open LogSense" quick action (registered automatically).
+  iOS delivers the tap to *your* scene delegate; forward it with one line:
+  `if LogSense.handleShortcut(item) { completionHandler(true); return }`.
+- **Crash notification tap** deep-links to the report list. If your app sets its own
+  `UNUserNotificationCenter` delegate, forward with one line:
+  `if LogSense.handleNotificationResponse(response) { completionHandler(); return }`.
+  If your app sets **no** delegate, LogSense claims the vacant slot itself — zero code.
+- **Programmatic**: `LogSense.present()` (its own overlay window above your app), or embed
+  `LogSenseView` in a debug menu or hidden gesture of your choosing. LogSense deliberately claims
+  no global gesture: shake, in particular, is often taken.
 
 There is no separate no-op artifact: keep the calls behind `#if DEBUG` and dead-code stripping
 removes the library from release builds.
