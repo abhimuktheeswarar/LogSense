@@ -6,6 +6,13 @@ import SwiftUI
 internal struct RootView: View {
     let core: LogSenseCore
     let onDone: (() -> Void)?
+    @ObservedObject private var state: LogSenseState
+
+    init(core: LogSenseCore, onDone: (() -> Void)?) {
+        self.core = core
+        self.onDone = onDone
+        self.state = core.state
+    }
 
     var body: some View {
         TabView {
@@ -16,11 +23,9 @@ internal struct RootView: View {
                 body: "Analytics events lifted out of the log stream land here."
             )
             .tabItem { Label("Events", systemImage: "chart.bar.xaxis") }
-            ComingSoonScreen(
-                title: "Crashes",
-                body: "Crash reports that survive the process land here."
-            )
-            .tabItem { Label("Crashes", systemImage: "exclamationmark.triangle") }
+            CrashesScreen(core: core)
+                .tabItem { Label("Crashes", systemImage: "exclamationmark.triangle") }
+                .badge(state.crashes.count)
         }
         .tint(core.config.accentColor ?? .accentColor)
         .preferredColorScheme(colorScheme(core.config.theme))

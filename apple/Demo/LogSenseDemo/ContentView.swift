@@ -92,5 +92,12 @@ struct ContentView: View {
         if ProcessInfo.processInfo.environment["LOGSENSE_AUTO_OPEN"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { LogSense.present() }
         }
+        if ProcessInfo.processInfo.environment["LOGSENSE_CRASH_AFTER"] == "1" {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                NSException(name: .invalidArgumentException,
+                            reason: "LogSense scripted demo crash",
+                            userInfo: nil).raise()
+            }
+        }
     }
 }

@@ -1,5 +1,8 @@
 import Foundation
 import Combine
+#if os(iOS)
+import UserNotifications
+#endif
 
 internal enum CaptureStatus {
     case waiting, live, paused
@@ -17,6 +20,8 @@ internal final class LogSenseState: ObservableObject {
     @Published var clearedAtId: Int64 = 0
     /// When paused, the wall-clock time of the newest published line ("Stream frozen at …").
     @Published var frozenAtMs: Int64 = 0
+    /// Stored crash reports, newest first, across sessions.
+    @Published var crashes: [StoredCrash] = []
 }
 
 /// The process singleton every part of LogSense hangs off. No DI framework — this is passed down
@@ -30,9 +35,15 @@ internal final class LogSenseCore {
     let buffer: LogBuffer
     let state: LogSenseState
     let hostName: String
+    /// The host executable's name — what its frames carry in a stack trace.
+    let appBinary: String
+    let sessionStore: SessionStore?
 
     private let logReader = LogReader()
     private let stdoutReader = StdoutReader()
+    #if os(iOS)
+    private var metricKit: MetricKitCollector?
+    #endif
     private var pollTask: Task<Void, Never>?
     /// Read from the poll loop, written from the UI. Worst case a stale read delays one publish
     /// by a poll tick — not worth a lock.
@@ -57,6 +68,14 @@ internal final class LogSenseCore {
         self.hostName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
             ?? ProcessInfo.processInfo.processName
+        self.appBinary = Bundle.main.object(forInfoDictionaryKey: "CFBundleExecutable") as? String
+            ?? ProcessInfo.processInfo.processName
+        // Storage failing must not take capture down with it — crashes degrade, logs keep working.
+        self.sessionStore = try? SessionStore(
+            root: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+                .appendingPathComponent("LogSense"),
+            config: config
+        )
     }
 
     /// A buffer of huge lines on a small phone is how a debug tool OOMs the app it's watching.
@@ -73,12 +92,89 @@ internal final class LogSenseCore {
             stdoutReader.onLines = { [weak self] lines in self?.ingestStdout(lines) }
             stdoutReader.start()
         }
+        startCrashPipeline()
         pollTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
                 self?.pollOnce()
                 try? await Task.sleep(nanoseconds: LogSenseCore.pollIntervalNs)
             }
         }
+    }
+
+    private func startCrashPipeline() {
+        guard let store = sessionStore else { return }
+        let deviceInfo = DeviceInfo.summary(sessionStartedAtMs: store.sessionStartedAt(store.currentSessionId))
+        if config.captureCrashes {
+            CrashHandler.install(CrashHandler.Context(
+                pendingDir: store.pendingDir,
+                buffer: buffer,
+                sessionId: store.currentSessionId,
+                contextLines: config.crashContextLines,
+                deviceInfo: deviceInfo
+            ))
+        }
+        #if os(iOS)
+        let collector = MetricKitCollector(deviceInfo: deviceInfo)
+        collector.onCrash = { [weak self] record in self?.storeCrash(record, notify: true) }
+        collector.start()
+        metricKit = collector
+        #endif
+        // Ingest what the last run left behind, off the launch path.
+        Task.detached(priority: .utility) { [weak self] in
+            guard let self, let store = self.sessionStore else { return }
+            let ingested = store.ingestPendingCrashes()
+            let all = store.loadCrashes()
+            Task { @MainActor [state = self.state] in state.crashes = all }
+            if let newest = ingested.first ?? all.first, !ingested.isEmpty {
+                self.postCrashNotification(newest.record)
+            }
+        }
+    }
+
+    private func storeCrash(_ record: CrashRecord, notify: Bool) {
+        guard let store = sessionStore else { return }
+        store.add(record)
+        let all = store.loadCrashes()
+        Task { @MainActor [state] in state.crashes = all }
+        if notify { postCrashNotification(record) }
+    }
+
+    /// Best-effort local alert, one stable identifier so alerts replace rather than stack. Only
+    /// fires when the host already holds notification permission — a debug tool never prompts.
+    /// Tapping opens the app normally; LogSense deliberately does not touch the host's
+    /// UNUserNotificationCenter delegate, so there is no deep link — hijacking the delegate would
+    /// break the host's own push handling, which is a far worse trade.
+    private func postCrashNotification(_ record: CrashRecord) {
+        #if os(iOS)
+        guard config.showCrashNotification else { return }
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            guard settings.authorizationStatus == .authorized else { return }
+            let content = UNMutableNotificationContent()
+            content.title = record.exceptionClass ?? (record.type == "HANG" ? "Hang" : "Crash")
+            content.body = record.message ?? "Open LogSense for the report."
+            content.subtitle = "LogSense"
+            center.add(UNNotificationRequest(
+                identifier: "logsense.crash", content: content, trigger: nil
+            ))
+        }
+        #endif
+    }
+
+    func deleteCrash(id: String) {
+        sessionStore?.delete(id: id)
+        refreshCrashes()
+    }
+
+    func deleteAllCrashes() {
+        sessionStore?.deleteAll()
+        refreshCrashes()
+    }
+
+    private func refreshCrashes() {
+        guard let store = sessionStore else { return }
+        let all = store.loadCrashes()
+        Task { @MainActor [state] in state.crashes = all }
     }
 
     private func pollOnce() {
