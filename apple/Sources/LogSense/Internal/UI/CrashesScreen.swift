@@ -57,6 +57,7 @@ internal struct CrashesScreen: View {
                 }
             }
             .navigationTitle("Crashes")
+            .onAppear { core.markCrashesSeen() }
             .navigationDestination(for: StoredCrash.self) { crash in
                 CrashReportScreen(crash: crash, appBinary: core.appBinary)
             }

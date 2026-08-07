@@ -58,6 +58,11 @@ public struct LogSenseConfig {
     /// (inert until the host has notification permission).
     public var showCrashNotification: Bool
 
+    /// Show capture state as a Live Activity (Dynamic Island + Lock Screen; red on a crash).
+    /// iOS 16.2+, and requires the host's widget extension to include `LogSenseLiveActivity` —
+    /// without it this is inert. QA can also switch it off in Settings.
+    public var showLiveActivity: Bool
+
     /// Force light/dark, or follow the system.
     public var theme: ThemeMode
 
@@ -92,6 +97,7 @@ public struct LogSenseConfig {
         maxStoredCrashes: Int = 50,
         maxSessions: Int = 10,
         showCrashNotification: Bool = true,
+        showLiveActivity: Bool = true,
         theme: ThemeMode = .system,
         accentColor: Color? = nil,
         customSignals: [String: String] = [:]
@@ -107,6 +113,7 @@ public struct LogSenseConfig {
         self.maxStoredCrashes = maxStoredCrashes
         self.maxSessions = maxSessions
         self.showCrashNotification = showCrashNotification
+        self.showLiveActivity = showLiveActivity
         self.theme = theme
         self.accentColor = accentColor
         self.customSignals = customSignals

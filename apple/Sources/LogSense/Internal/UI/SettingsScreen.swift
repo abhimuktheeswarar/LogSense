@@ -37,6 +37,16 @@ internal struct SettingsScreen: View {
                     Text("Set in LogSenseConfig at start. Older lines drop off the top once the buffer is full; nothing is persisted except events and crash reports.")
                 }
 
+                if #available(iOS 16.2, *) {
+                    Section {
+                        Toggle("Show while recording", isOn: liveActivityBinding)
+                    } header: {
+                        Text("Live Activity")
+                    } footer: {
+                        Text("Dynamic Island and Lock Screen presence while capture runs; red on a crash. Off, capture continues silently.")
+                    }
+                }
+
                 Section {
                     ForEach(core.config.analyticsTagPatterns.keys.sorted(), id: \.self) { tag in
                         LabeledContent {
@@ -158,6 +168,13 @@ internal struct SettingsScreen: View {
 
     private var catalog: [Signal] {
         BuiltInSignals.catalog(custom: core.config.customSignals)
+    }
+
+    private var liveActivityBinding: Binding<Bool> {
+        Binding(
+            get: { Prefs.liveActivityEnabled() },
+            set: { UserDefaults.standard.set($0, forKey: Prefs.liveActivityKey) }
+        )
     }
 
     private func binding(for signalId: String) -> Binding<Bool> {

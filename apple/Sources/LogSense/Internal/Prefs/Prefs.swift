@@ -8,6 +8,8 @@ internal enum Prefs {
     private static let filtersKey = "com.msabhi.logsense.savedFilters"
     private static let tagsKey = "com.msabhi.logsense.analyticsTags"
     static let themeKey = "com.msabhi.logsense.theme"
+    static let liveActivityKey = "com.msabhi.logsense.liveActivity"
+    private static let lastSeenCrashKey = "com.msabhi.logsense.lastSeenCrashMs"
 
     /// Muted signal ids; the built-in default set until the user touches it.
     static func mutedSignals() -> Set<String> {
@@ -39,5 +41,19 @@ internal enum Prefs {
 
     static func setAnalyticsTags(_ tags: [String: String?]) {
         UserDefaults.standard.set(tags.mapValues { $0 ?? "" }, forKey: tagsKey)
+    }
+
+    /// The Settings "Show while recording" toggle; on until turned off.
+    static func liveActivityEnabled() -> Bool {
+        UserDefaults.standard.object(forKey: liveActivityKey) as? Bool ?? true
+    }
+
+    /// The newest crash timestamp the user has seen — the activity stays red past this.
+    static func lastSeenCrashMs() -> Int64 {
+        Int64(UserDefaults.standard.double(forKey: lastSeenCrashKey))
+    }
+
+    static func setLastSeenCrashMs(_ ms: Int64) {
+        UserDefaults.standard.set(Double(ms), forKey: lastSeenCrashKey)
     }
 }

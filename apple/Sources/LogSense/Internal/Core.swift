@@ -57,8 +57,18 @@ internal final class LogSenseCore {
     #if os(iOS)
     private var metricKit: MetricKitCollector?
     private var lifecycle: LifecycleSignals?
+    /// `LiveActivityController` behind an existential — the field must exist below iOS 16.2.
+    private var liveActivityBox: AnyObject?
     #endif
     private var pollTask: Task<Void, Never>?
+
+    /// Facts the Live Activity shows, written from several threads (poll, stdout, MetricKit).
+    private let statsLock = NSLock()
+    private var sessionEventCount = 0
+    private var crashesSinceLaunch = 0
+    private var newestCrashMs: Int64 = 0
+    private var latestCrashSummary: (type: String, title: String, detail: String, topFrame: String, timeMs: Int64)?
+    let sessionStartDate = Date()
     /// Read from the poll loop, written from the UI. Worst case a stale read delays one publish
     /// by a poll tick — not worth a lock.
     private var paused = false
@@ -121,6 +131,14 @@ internal final class LogSenseCore {
             stdoutReader.onLines = { [weak self] lines in self?.ingestStdout(lines) }
             stdoutReader.start()
         }
+        #if os(iOS)
+        if #available(iOS 16.2, *), config.showLiveActivity {
+            liveActivityBox = LiveActivityController(
+                hostName: hostName,
+                enabled: { Prefs.liveActivityEnabled() }
+            )
+        }
+        #endif
         startCrashPipeline()
         pollTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
@@ -166,6 +184,9 @@ internal final class LogSenseCore {
             }
             if let newest = ingested.first ?? all.first, !ingested.isEmpty {
                 self.postCrashNotification(newest.record)
+                #if os(iOS)
+                self.noteCrashCaptured(newest.record)
+                #endif
             }
         }
     }
@@ -192,6 +213,9 @@ internal final class LogSenseCore {
         let all = store.loadCrashes()
         Task { @MainActor [state] in state.crashes = all }
         if notify { postCrashNotification(record) }
+        #if os(iOS)
+        noteCrashCaptured(record)
+        #endif
     }
 
     /// Best-effort local alert, one stable identifier so alerts replace rather than stack. Only
@@ -238,6 +262,9 @@ internal final class LogSenseCore {
             onBatch(buffer.append(batch))
         }
         publishIfNeeded()
+        #if os(iOS)
+        syncLiveActivity()
+        #endif
     }
 
     private func ingestStdout(_ lines: [String]) {
@@ -258,6 +285,9 @@ internal final class LogSenseCore {
             let extracted = analytics.process(batch)
             if !extracted.isEmpty {
                 let stored = store.appendEvents(extracted, maxPerSession: max(0, config.maxStoredEvents))
+                statsLock.lock()
+                sessionEventCount += stored.count
+                statsLock.unlock()
                 Task { @MainActor [state] in
                     // Batch entries arrive oldest-first; the published list stays newest-first.
                     state.events.insert(contentsOf: stored.reversed(), at: 0)
@@ -265,6 +295,101 @@ internal final class LogSenseCore {
             }
         }
     }
+
+    // MARK: - Live Activity feed
+
+    #if os(iOS)
+    @available(iOS 16.2, *)
+    private var liveActivity: LiveActivityController? {
+        liveActivityBox as? LiveActivityController
+    }
+
+    @available(iOS 16.2, *)
+    private func activityContent() -> LogSenseActivityAttributes.ContentState {
+        statsLock.lock()
+        let events = sessionEventCount
+        let crashes = crashesSinceLaunch
+        let unseen = newestCrashMs > Prefs.lastSeenCrashMs()
+        let crash = latestCrashSummary
+        statsLock.unlock()
+        let paused = self.paused
+        let last = buffer.currentSnapshot().last
+        // The crash takeover outranks paused: a crash can't scroll past unseen.
+        let phase: LogSenseActivityAttributes.ContentState.Phase =
+            unseen ? .crashed : (paused ? .paused : .recording)
+        return LogSenseActivityAttributes.ContentState(
+            lines: buffer.totalReceived,
+            events: events,
+            crashes: crashes,
+            sessionStart: sessionStartDate,
+            phase: phase,
+            pausedBuffered: 0,
+            latestLine: last.map { "\($0.level.letter) \($0.tag) · \($0.message.prefix(120))" } ?? "",
+            crash: (unseen ? crash : nil).map {
+                .init(type: $0.type, title: $0.title, detail: $0.detail,
+                      topFrame: $0.topFrame, timeMs: $0.timeMs)
+            }
+        )
+    }
+
+    private func syncLiveActivity(immediate: Bool = false, alert: (title: String, body: String)? = nil) {
+        if #available(iOS 16.2, *), let liveActivity {
+            var content = activityContent()
+            if content.phase == .paused {
+                content.pausedBuffered = max(0, buffer.totalReceived - lastPublishedTotal)
+            }
+            liveActivity.update(content, immediate: immediate, alert: alert)
+        }
+    }
+
+    private func noteCrashCaptured(_ record: CrashRecord) {
+        let frame = appFrame(stacktrace: record.stacktrace, appBinary: appBinary) ?? ""
+        statsLock.lock()
+        crashesSinceLaunch += 1
+        newestCrashMs = max(newestCrashMs, record.timestamp)
+        latestCrashSummary = (
+            type: record.type,
+            title: record.exceptionClass ?? (record.type == "HANG" ? "Hang" : "Crash"),
+            detail: record.message ?? "",
+            topFrame: frame,
+            timeMs: record.timestamp
+        )
+        statsLock.unlock()
+        syncLiveActivity(
+            immediate: true,
+            alert: (
+                title: record.exceptionClass ?? (record.type == "HANG" ? "Hang captured" : "Crash captured"),
+                body: record.message ?? "Open LogSense for the report."
+            )
+        )
+    }
+    #endif
+
+    /// Clears the crash takeover — the activity (and any future one) returns to blue.
+    @MainActor
+    func markCrashesSeen() {
+        statsLock.lock()
+        let newest = newestCrashMs
+        statsLock.unlock()
+        if newest > 0 { Prefs.setLastSeenCrashMs(newest) }
+        #if os(iOS)
+        syncLiveActivity(immediate: true)
+        #endif
+    }
+
+    /// Stop from the Live Activity: capture pauses and the activity ends with final counts.
+    @MainActor
+    func stopCapture() {
+        pause()
+        #if os(iOS)
+        if #available(iOS 16.2, *), let liveActivity {
+            liveActivity.end(activityContent())
+        }
+        #endif
+    }
+
+    /// The last published total, for the "n lines buffered" paused copy.
+    private var lastPublishedTotal = 0
 
     private func publishIfNeeded() {
         let total = buffer.totalReceived
@@ -281,6 +406,7 @@ internal final class LogSenseCore {
             }
             return
         }
+        lastPublishedTotal = total
         Task { @MainActor [state] in
             state.snapshot = snapshot
             state.totalReceived = total
@@ -294,6 +420,9 @@ internal final class LogSenseCore {
         state.status = .paused
         state.frozenAtMs = state.snapshot.last?.timeMs ?? Int64(Date().timeIntervalSince1970 * 1000)
         state.bufferedWhilePaused = 0
+        #if os(iOS)
+        syncLiveActivity(immediate: true)
+        #endif
     }
 
     @MainActor
@@ -304,7 +433,11 @@ internal final class LogSenseCore {
         if let snapshot = buffer.flush() {
             state.snapshot = snapshot
             state.totalReceived = buffer.totalReceived
+            lastPublishedTotal = buffer.totalReceived
         }
+        #if os(iOS)
+        syncLiveActivity(immediate: true)
+        #endif
     }
 
     @MainActor
