@@ -20,6 +20,10 @@ internal struct LogsScreen: View {
     @State private var findActive = false
     @State private var findIndex = 0
     @State private var selectedEntry: LogEntry?
+    @State private var showSettings = false
+    @State private var savingFilter = false
+    @State private var newFilterName = ""
+    @State private var savedFilters = Prefs.savedFilters()
 
     init(core: LogSenseCore, onDone: (() -> Void)?) {
         self.core = core
@@ -70,6 +74,28 @@ internal struct LogsScreen: View {
                 query = "tag:\"\(tag)\""
             }
         }
+        .sheet(isPresented: $showSettings, onDismiss: { savedFilters = Prefs.savedFilters() }) {
+            SettingsScreen(core: core)
+        }
+        .alert("Save filter", isPresented: $savingFilter) {
+            TextField("Name", text: $newFilterName)
+            Button("Save") {
+                let name = newFilterName.trimmingCharacters(in: .whitespaces)
+                guard !name.isEmpty else { return }
+                let next = SavedFilter(
+                    id: (savedFilters.map(\.id).max() ?? 0) + 1,
+                    name: name,
+                    filter: LogFilter(minLevel: minLevel, query: query),
+                    viewMode: viewMode
+                )
+                savedFilters.append(next)
+                Prefs.setSavedFilters(savedFilters)
+                newFilterName = ""
+            }
+            Button("Cancel", role: .cancel) { newFilterName = "" }
+        } message: {
+            Text("Saves the current query, minimum level and density for one-tap reuse.")
+        }
     }
 
     // MARK: header
@@ -105,7 +131,30 @@ internal struct LogsScreen: View {
                         }
                         Toggle("Wrap long lines", isOn: $wrap)
                         Toggle("Autoscroll", isOn: $autoscroll)
+                        if !savedFilters.isEmpty {
+                            Menu("Saved filters") {
+                                ForEach(savedFilters, id: \.id) { saved in
+                                    Button(saved.name) {
+                                        query = saved.filter.query
+                                        minLevel = saved.filter.minLevel
+                                        viewMode = saved.viewMode
+                                    }
+                                }
+                            }
+                        }
+                        if isFiltering {
+                            Button {
+                                savingFilter = true
+                            } label: {
+                                Label("Save filter…", systemImage: "bookmark")
+                            }
+                        }
                         ShareLink(item: shareText(rows)) { Label("Share…", systemImage: "square.and.arrow.up") }
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("Settings", systemImage: "gearshape")
+                        }
                         Button("Clear", role: .destructive) { core.clear() }
                     } label: {
                         Image(systemName: "ellipsis")

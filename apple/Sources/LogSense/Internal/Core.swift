@@ -95,7 +95,7 @@ internal final class LogSenseCore {
     }
 
     private func startCapture() {
-        analytics = AnalyticsDetector(config: config)
+        analytics = AnalyticsDetector(config: config, settingsTagPatterns: { Prefs.analyticsTags() })
         signals = SignalDetector(config: config, muted: { Prefs.mutedSignals() })
         signals.onChange = { [weak self] hits in
             Task { @MainActor [weak self] in self?.state.signalHits = hits }

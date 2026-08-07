@@ -7,6 +7,8 @@ internal struct RootView: View {
     let core: LogSenseCore
     let onDone: (() -> Void)?
     @ObservedObject private var state: LogSenseState
+    /// The Settings override; empty = follow the config.
+    @AppStorage(Prefs.themeKey) private var themeRaw = ""
 
     init(core: LogSenseCore, onDone: (() -> Void)?) {
         self.core = core
@@ -25,7 +27,7 @@ internal struct RootView: View {
                 .badge(state.crashes.count)
         }
         .tint(core.config.accentColor ?? .accentColor)
-        .preferredColorScheme(colorScheme(core.config.theme))
+        .preferredColorScheme(colorScheme(ThemeMode(rawValue: themeRaw) ?? core.config.theme))
     }
 
     private func colorScheme(_ mode: ThemeMode) -> ColorScheme? {
