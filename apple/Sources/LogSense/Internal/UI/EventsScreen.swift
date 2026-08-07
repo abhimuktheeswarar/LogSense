@@ -6,14 +6,16 @@ import SwiftUI
 /// sheet with the parameters as an inset list and the raw line verbatim.
 internal struct EventsScreen: View {
     let core: LogSenseCore
+    let onDone: (() -> Void)?
     @ObservedObject private var state: LogSenseState
     @State private var query = ""
     @State private var tagScope: String?
     @State private var selected: StoredEvent?
     @State private var confirmClear = false
 
-    init(core: LogSenseCore) {
+    init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
+        self.onDone = onDone
         self.state = core.state
     }
 
@@ -87,14 +89,21 @@ internal struct EventsScreen: View {
                 if tags.count > 1 { tagPills }
             }
             .toolbar {
+                if let onDone {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BackButton(action: onDone)
+                    }
+                }
                 if !state.events.isEmpty {
-                    Menu {
-                        ShareLink(item: exportJson(displayed)) {
-                            Label("Share shown as JSON", systemImage: "square.and.arrow.up")
+                    ToolbarItem(placement: .primaryAction) {
+                        Menu {
+                            ShareLink(item: exportJson(displayed)) {
+                                Label("Share shown as JSON", systemImage: "square.and.arrow.up")
+                            }
+                            Button("Delete all", role: .destructive) { confirmClear = true }
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
                         }
-                        Button("Delete all", role: .destructive) { confirmClear = true }
-                    } label: {
-                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }

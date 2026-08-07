@@ -5,11 +5,13 @@ import SwiftUI
 /// swipe-to-delete; the report screen pushed with device facts and the stacktrace kept monospace.
 internal struct CrashesScreen: View {
     let core: LogSenseCore
+    let onDone: (() -> Void)?
     @ObservedObject private var state: LogSenseState
     @State private var confirmClear = false
 
-    init(core: LogSenseCore) {
+    init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
+        self.onDone = onDone
         self.state = core.state
     }
 
@@ -59,8 +61,15 @@ internal struct CrashesScreen: View {
                 CrashReportScreen(crash: crash, appBinary: core.appBinary)
             }
             .toolbar {
+                if let onDone {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BackButton(action: onDone)
+                    }
+                }
                 if !state.crashes.isEmpty {
-                    Button("Clear All", role: .destructive) { confirmClear = true }
+                    ToolbarItem(placement: .primaryAction) {
+                        Button("Clear All", role: .destructive) { confirmClear = true }
+                    }
                 }
             }
             .confirmationDialog(

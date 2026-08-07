@@ -114,14 +114,21 @@ internal struct LogsScreen: View {
     private func header(rows: [LogEntry]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("LOGSENSE")
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .kerning(1)
-                        .foregroundStyle(.secondary)
-                    Text(core.hostName)
-                        .font(.system(size: 34, weight: .bold))
-                        .lineLimit(1)
+                HStack(alignment: .top, spacing: 10) {
+                    if let onDone {
+                        // The overlay window has no system chrome; a standard back chevron at the
+                        // standard place is the exit.
+                        BackButton(action: onDone)
+                    }
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("LOGSENSE")
+                            .font(.system(size: 11.5, weight: .semibold))
+                            .kerning(1)
+                            .foregroundStyle(.secondary)
+                        Text(core.hostName)
+                            .font(.system(size: 34, weight: .bold))
+                            .lineLimit(1)
+                    }
                 }
                 Spacer()
                 HStack(spacing: 8) {
@@ -172,10 +179,6 @@ internal struct LogsScreen: View {
                             .font(.system(size: 15, weight: .semibold))
                             .frame(width: 34, height: 34)
                             .background(Color(.tertiarySystemFill), in: Circle())
-                    }
-                    if let onDone {
-                        Button("Done", action: onDone)
-                            .font(.system(size: 15, weight: .semibold))
                     }
                 }
             }
@@ -353,12 +356,33 @@ internal struct LogsScreen: View {
                                 .listRowSeparator(viewMode == .standard ? .visible : .hidden)
                                 .listRowBackground(rowBackground(entry, matches: matches))
                         }
+                        // Fixed-size sentinel: scrolling to the last real row is unreliable when
+                        // rows wrap to variable heights — the sentinel always lands at the bottom.
+                        Color.clear
+                            .frame(height: 1)
+                            .id(Self.bottomSentinel)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
                     }
                     .listStyle(.plain)
                     .environment(\.defaultMinListRowHeight, 10)
-                    .onChange(of: state.snapshot.count) { _ in
-                        if autoscroll, state.status != .paused, let last = rows.last {
-                            proxy.scrollTo(last.id, anchor: .bottom)
+                    .onAppear {
+                        // First layout pass hasn't happened yet; scroll on the next runloop turn.
+                        if autoscroll {
+                            DispatchQueue.main.async { proxy.scrollTo(Self.bottomSentinel, anchor: .bottom) }
+                        }
+                    }
+                    // The last id, not the count: at the buffer cap the count stops changing while
+                    // lines keep flowing.
+                    .onChange(of: rows.last?.id) { _ in
+                        if autoscroll, state.status != .paused {
+                            proxy.scrollTo(Self.bottomSentinel, anchor: .bottom)
+                        }
+                    }
+                    .onChange(of: autoscroll) { on in
+                        if on {
+                            withAnimation { proxy.scrollTo(Self.bottomSentinel, anchor: .bottom) }
                         }
                     }
                     .onChange(of: findIndex) { _ in
@@ -367,12 +391,22 @@ internal struct LogsScreen: View {
                         }
                     }
                     .overlay(alignment: .bottomTrailing) {
-                        if !autoscroll {
-                            jumpToLatestButton {
-                                autoscroll = true
-                                if let last = rows.last { proxy.scrollTo(last.id, anchor: .bottom) }
+                        VStack(spacing: 10) {
+                            fabButton("arrow.up") {
+                                autoscroll = false
+                                if let first = rows.first {
+                                    withAnimation { proxy.scrollTo(first.id, anchor: .top) }
+                                }
+                            }
+                            if !autoscroll {
+                                fabButton("arrow.down") {
+                                    // The onChange(of: autoscroll) hook does the scrolling.
+                                    autoscroll = true
+                                }
                             }
                         }
+                        .padding(.trailing, 18)
+                        .padding(.bottom, 14)
                     }
                     .simultaneousGesture(DragGesture().onChanged { _ in autoscroll = false })
                 }
@@ -401,16 +435,16 @@ internal struct LogsScreen: View {
         return .clear
     }
 
-    private func jumpToLatestButton(action: @escaping () -> Void) -> some View {
+    private static let bottomSentinel = "logsense.bottom"
+
+    private func fabButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: "arrow.down")
+            Image(systemName: systemImage)
                 .font(.system(size: 16, weight: .semibold))
                 .frame(width: 44, height: 44)
                 .background(.ultraThinMaterial, in: Circle())
                 .overlay(Circle().strokeBorder(.white.opacity(0.16), lineWidth: 0.5))
         }
-        .padding(.trailing, 18)
-        .padding(.bottom, 14)
     }
 
     @ViewBuilder
@@ -747,6 +781,21 @@ private struct RawRow: View {
 }
 
 // MARK: - shared bits
+
+/// The way out of the overlay window — a standard back chevron, shown on every tab.
+internal struct BackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.backward")
+                .font(.system(size: 17, weight: .semibold))
+                .frame(width: 34, height: 34)
+                .background(Color(.tertiarySystemFill), in: Circle())
+        }
+        .accessibilityLabel("Back to app")
+    }
+}
 
 internal struct EmptyStateView: View {
     let icon: String

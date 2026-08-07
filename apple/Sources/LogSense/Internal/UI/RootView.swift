@@ -20,9 +20,9 @@ internal struct RootView: View {
         TabView {
             LogsScreen(core: core, onDone: onDone)
                 .tabItem { Label("Logs", systemImage: "list.bullet.rectangle") }
-            EventsScreen(core: core)
+            EventsScreen(core: core, onDone: onDone)
                 .tabItem { Label("Events", systemImage: "chart.bar.xaxis") }
-            CrashesScreen(core: core)
+            CrashesScreen(core: core, onDone: onDone)
                 .tabItem { Label("Crashes", systemImage: "exclamationmark.triangle") }
                 .badge(state.crashes.count)
         }
