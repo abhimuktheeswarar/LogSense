@@ -2,9 +2,10 @@
 .gradle/
 build/
 
-# Swift Package Manager
+# Swift Package Manager / Xcode
 .build/
 .swiftpm/
+xcuserdata/
 
 # Android / IDE
 .idea/
