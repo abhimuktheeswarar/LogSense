@@ -113,8 +113,9 @@ internal struct LogsScreen: View {
         NavigationStack {
             VStack(spacing: 0) {
                 header(rows: rows)
-                if isActiveTabPaused { frozenTabBanner }
-                if state.status == .paused { pausedBanner }
+                tabsRow
+                if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
+                if state.status == .paused { pausedBanner.padding(.top, 8) }
                 content(rows: rows, matches: matches)
             }
             // The custom header replaces the bar visually, but the title still feeds the pushed
@@ -222,6 +223,8 @@ internal struct LogsScreen: View {
         selectTab(next.id)
     }
 
+    /// A full-bleed band, per rev 4.1: the tab strip reads as its own bar — tinted, hairlined —
+    /// not as pills floating in the header.
     private var tabsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 7) {
@@ -295,7 +298,12 @@ internal struct LogsScreen: View {
                 }
                 .buttonStyle(.plain)
             }
+            .padding(.horizontal, 16)
+            .padding(.top, 6)
+            .padding(.bottom, 9)
         }
+        .background(scheme == .dark ? Color(hex: 0x1C1C1E).opacity(0.55) : Color(hex: 0xF2F2F7).opacity(0.7))
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     /// The per-tab freeze banner: what is waiting, and the way back.
@@ -407,11 +415,10 @@ internal struct LogsScreen: View {
             }
             statusRow(rows: rows)
             filterField
-            tabsRow
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 6)
+        .padding(.bottom, 4)
     }
 
     private func headerButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
