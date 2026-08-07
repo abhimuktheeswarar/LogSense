@@ -37,11 +37,22 @@ internal final class SessionStore {
     private var earlierDir: URL { root.appendingPathComponent("earlier") }
     var pendingDir: URL { root.appendingPathComponent("pending-crashes") }
 
-    init(root: URL, config: LogSenseConfig, now: Date = Date()) throws {
+    private let keepPastEvents: Bool
+    private let keepPastCrashes: Bool
+
+    init(
+        root: URL,
+        config: LogSenseConfig,
+        keepPastEvents: Bool = true,
+        keepPastCrashes: Bool = true,
+        now: Date = Date()
+    ) throws {
         self.root = root
         self.maxSessions = max(1, config.maxSessions)
         self.retentionDays = max(1, config.retentionDays)
         self.maxStoredCrashes = max(0, config.maxStoredCrashes)
+        self.keepPastEvents = keepPastEvents
+        self.keepPastCrashes = keepPastCrashes
         let startedAt = Int64(now.timeIntervalSince1970 * 1000)
         self.currentSessionId = "\(startedAt)-\(UUID().uuidString.prefix(8))"
         for dir in [sessionsDir, earlierDir, pendingDir] {
@@ -234,6 +245,25 @@ internal final class SessionStore {
         let keep = Set(previous.suffix(maxSessions - 1).filter { Self.startedAt(of: $0) >= cutoff })
         for id in previous where !keep.contains(id) {
             try? fm.removeItem(at: dir(forSession: id))
+        }
+        // The keep-past toggles, applied at launch like Android: dropping past events/crashes is
+        // a pruning decision, not a capture one — the current run always records.
+        for id in keep {
+            if !keepPastEvents {
+                try? fm.removeItem(at: eventsFile(forSession: id))
+            }
+            if !keepPastCrashes {
+                let files = (try? fm.contentsOfDirectory(at: dir(forSession: id), includingPropertiesForKeys: nil)) ?? []
+                for file in files where file.lastPathComponent.hasPrefix("crash_") {
+                    try? fm.removeItem(at: file)
+                }
+            }
+        }
+        if !keepPastCrashes {
+            let files = (try? fm.contentsOfDirectory(at: earlierDir, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.lastPathComponent.hasPrefix("crash_") {
+                try? fm.removeItem(at: file)
+            }
         }
         let earlierFiles = (try? fm.contentsOfDirectory(at: earlierDir, includingPropertiesForKeys: nil)) ?? []
         for file in earlierFiles {

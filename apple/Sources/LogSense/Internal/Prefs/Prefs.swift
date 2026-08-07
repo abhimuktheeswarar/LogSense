@@ -10,6 +10,8 @@ internal enum Prefs {
     static let themeKey = "com.msabhi.logsense.theme"
     static let liveActivityKey = "com.msabhi.logsense.liveActivity"
     private static let lastSeenCrashKey = "com.msabhi.logsense.lastSeenCrashMs"
+    static let keepPastEventsKey = "com.msabhi.logsense.keepPastEvents"
+    static let keepPastCrashesKey = "com.msabhi.logsense.keepPastCrashes"
 
     /// Muted signal ids; the built-in default set until the user touches it.
     static func mutedSignals() -> Set<String> {
@@ -46,6 +48,17 @@ internal enum Prefs {
     /// The Settings "Show while recording" toggle; on until turned off.
     static func liveActivityEnabled() -> Bool {
         UserDefaults.standard.object(forKey: liveActivityKey) as? Bool ?? true
+    }
+
+    /// Whether events/crashes from earlier app runs are retained — same defaults as Android:
+    /// crashes on (you rarely want to miss one); events off (high-volume, usually only this
+    /// run matters). Applied at the next launch's pruning.
+    static func keepPastEvents() -> Bool {
+        UserDefaults.standard.object(forKey: keepPastEventsKey) as? Bool ?? false
+    }
+
+    static func keepPastCrashes() -> Bool {
+        UserDefaults.standard.object(forKey: keepPastCrashesKey) as? Bool ?? true
     }
 
     /// The newest crash timestamp the user has seen — the activity stays red past this.

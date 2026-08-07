@@ -1,11 +1,17 @@
 #if os(iOS)
 import SwiftUI
 
+/// Mirrors Android's BuildConfig.VERSION_NAME footer — bumped as part of a release, like the
+/// Android version is.
+private let logSenseVersion = "0.6.0"
+private let repoURL = URL(string: "https://github.com/abhimuktheeswarar/LogSense")!
+
 /// Grouped inset lists per the design: appearance, capture facts, events capture tags (config tags
 /// locked, QA tags editable), the signal catalog with per-signal switches, saved filters.
 /// Pushed from Logs ("‹ Logs" comes from the navigation title), never its own stack.
 internal struct SettingsScreen: View {
     let core: LogSenseCore
+    @Environment(\.openURL) private var openURL
     @AppStorage(Prefs.themeKey) private var themeRaw = ""
     @State private var muted = Prefs.mutedSignals()
     @State private var qaTags = Prefs.analyticsTags()
@@ -28,13 +34,22 @@ internal struct SettingsScreen: View {
                 }
 
                 Section {
+                    Toggle("Save analytics events", isOn: boolBinding(Prefs.keepPastEventsKey, default: false))
+                    Toggle("Save crash reports", isOn: boolBinding(Prefs.keepPastCrashesKey, default: true))
                     LabeledContent("Buffer limit", value: "\(core.bufferLimit.formatted()) lines")
+                } header: {
+                    Text("Storage")
+                } footer: {
+                    Text("Whether events and crash reports from earlier runs are kept — applied at the next launch. Private to the app, wiped on uninstall; oldest lines drop first.")
+                }
+
+                Section {
                     LabeledContent("Capture print()", value: core.config.captureStandardOutput ? "On" : "Off")
                     LabeledContent("Capture crashes", value: core.config.captureCrashes ? "On" : "Off")
                 } header: {
                     Text("Capture")
                 } footer: {
-                    Text("Set in LogSenseConfig at start. Older lines drop off the top once the buffer is full; nothing is persisted except events and crash reports.")
+                    Text("Set in LogSenseConfig at start.")
                 }
 
                 if #available(iOS 16.2, *) {
@@ -139,9 +154,20 @@ internal struct SettingsScreen: View {
 
                 Section {
                 } footer: {
-                    Text("LogSense · Apache License 2.0")
-                        .frame(maxWidth: .infinity)
-                        .multilineTextAlignment(.center)
+                    // Like Android's AboutFooter: no visual affordance — tapping anywhere on the
+                    // block opens the repo.
+                    VStack(spacing: 7) {
+                        Text("LogSense")
+                            .font(.system(size: 16, weight: .semibold))
+                            .foregroundStyle(.primary)
+                        Text(logSenseVersion)
+                            .font(.system(size: 12, design: .monospaced))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 22)
+                    .padding(.bottom, 12)
+                    .contentShape(Rectangle())
+                    .onTapGesture { openURL(repoURL) }
                 }
             }
             .navigationTitle("Settings")
@@ -171,9 +197,13 @@ internal struct SettingsScreen: View {
     }
 
     private var liveActivityBinding: Binding<Bool> {
+        boolBinding(Prefs.liveActivityKey, default: true)
+    }
+
+    private func boolBinding(_ key: String, default defaultValue: Bool) -> Binding<Bool> {
         Binding(
-            get: { Prefs.liveActivityEnabled() },
-            set: { UserDefaults.standard.set($0, forKey: Prefs.liveActivityKey) }
+            get: { UserDefaults.standard.object(forKey: key) as? Bool ?? defaultValue },
+            set: { UserDefaults.standard.set($0, forKey: key) }
         )
     }
 

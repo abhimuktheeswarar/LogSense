@@ -60,6 +60,32 @@ final class EventStoreTests: XCTestCase {
         XCTAssertTrue(s.loadEvents().isEmpty)
     }
 
+    func testKeepPastTogglesPruneEarlierRunsAtLaunch() throws {
+        // Android's defaults: past events dropped, past crashes kept — applied by launch pruning.
+        let first = try SessionStore(root: root, config: LogSenseConfig(), now: Date(timeIntervalSince1970: 1_000))
+        _ = first.appendEvents([event("past", ts: 1_000_500)], maxPerSession: 100)
+        first.add(CrashRecord(
+            timestamp: 1_000_600, sessionId: first.currentSessionId, type: "EXCEPTION",
+            threadName: nil, exceptionClass: "NSRangeException", message: nil,
+            stacktrace: "", deviceInfo: "", logContext: ""
+        ))
+
+        let second = try SessionStore(
+            root: root, config: LogSenseConfig(),
+            keepPastEvents: false, keepPastCrashes: true,
+            now: Date(timeIntervalSince1970: 2_000)
+        )
+        XCTAssertTrue(second.loadEvents().isEmpty, "past events dropped by default")
+        XCTAssertEqual(1, second.loadCrashes().count, "past crashes kept by default")
+
+        let third = try SessionStore(
+            root: root, config: LogSenseConfig(),
+            keepPastEvents: false, keepPastCrashes: false,
+            now: Date(timeIntervalSince1970: 3_000)
+        )
+        XCTAssertTrue(third.loadCrashes().isEmpty, "switching crashes off prunes them too")
+    }
+
     func testACorruptLineIsSkippedNotFatal() throws {
         let s = try store()
         _ = s.appendEvents([event("good", ts: 1)], maxPerSession: 100)

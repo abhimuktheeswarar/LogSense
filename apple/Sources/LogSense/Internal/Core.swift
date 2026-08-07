@@ -101,7 +101,9 @@ internal final class LogSenseCore {
         self.sessionStore = try? SessionStore(
             root: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent("LogSense"),
-            config: config
+            config: config,
+            keepPastEvents: Prefs.keepPastEvents(),
+            keepPastCrashes: Prefs.keepPastCrashes()
         )
     }
 
