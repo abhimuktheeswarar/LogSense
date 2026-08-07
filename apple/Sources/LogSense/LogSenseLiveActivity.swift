@@ -42,6 +42,7 @@ public struct LogSenseActivityAttributes: ActivityAttributes {
             public var title: String
             public var detail: String
             public var topFrame: String
+            public var thread: String?
             public var timeMs: Int64
         }
     }
@@ -194,6 +195,11 @@ private struct ExpandedTrailing: View {
                     .background(Color(hex: 0xFF453A).opacity(0.18), in: RoundedRectangle(cornerRadius: 7))
                     .foregroundStyle(Color(hex: 0xFF453A))
             }
+        case .paused:
+            Text("Paused · \(context.state.pausedBuffered.formatted())")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(hex: 0xFF9F0A))
+                .lineLimit(1)
         default:
             HStack(spacing: 5) {
                 Circle()
@@ -224,15 +230,20 @@ private struct ExpandedBottom: View {
                     Text(crash.title)
                         .font(.system(size: 17, weight: .bold))
                         .lineLimit(1)
-                    if !crash.detail.isEmpty {
-                        Text(crash.detail)
+                    // The design's one-liner: frame · thread · time. The full frame and message
+                    // live on the Lock Screen card, which has the room.
+                    let bits = [crash.topFrame, crash.thread ?? "", Format.time(crash.timeMs)]
+                        .filter { !$0.isEmpty }
+                    if !bits.isEmpty {
+                        Text(bits.joined(separator: " · "))
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                             .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
+            } else if context.state.phase != .paused {
+                // Paused drops the tiles — its expanded card is the short one: header + actions.
                 HStack(spacing: 8) {
                     StatTile(value: context.state.lines, label: "lines", slim: true)
                     StatTile(value: context.state.events, label: "events", slim: true)
@@ -341,9 +352,9 @@ private struct StatTile: View {
     var slim: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: slim ? 2 : 3) {
+        VStack(alignment: .leading, spacing: 3) {
             Text(value.formatted())
-                .font(.system(size: slim ? 15 : 17, weight: .bold))
+                .font(.system(size: 17, weight: .bold))
                 .minimumScaleFactor(0.7)
                 .lineLimit(1)
             Text(label)
@@ -352,8 +363,8 @@ private struct StatTile: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 10)
-        .padding(.vertical, slim ? 5 : 8)
-        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: 11))
+        .padding(.vertical, slim ? 6 : 8)
+        .background(.white.opacity(0.1), in: RoundedRectangle(cornerRadius: slim ? 12 : 11))
     }
 }
 
@@ -423,13 +434,15 @@ private struct Label01: View {
     }
 
     var body: some View {
+        // Slim = the expanded island's spec: 32pt capsule rows inside the ~155pt budget.
         Text(text)
-            .font(.system(size: slim ? 13 : 13.5, weight: .semibold))
+            .font(.system(size: slim ? 14 : 13.5, weight: .semibold))
             .foregroundStyle(prominent != nil ? (dark ? .black : .white) : .white)
             .lineLimit(1)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, slim ? 7 : 9)
-            .background(prominent ?? .white.opacity(0.18), in: RoundedRectangle(cornerRadius: 12))
+            .frame(height: slim ? 32 : nil)
+            .padding(.vertical, slim ? 0 : 9)
+            .background(prominent ?? .white.opacity(0.18), in: RoundedRectangle(cornerRadius: slim ? 16 : 12))
     }
 }
 

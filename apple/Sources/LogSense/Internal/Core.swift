@@ -65,7 +65,7 @@ internal final class LogSenseCore {
     private var sessionEventCount = 0
     private var crashesSinceLaunch = 0
     private var newestCrashMs: Int64 = 0
-    private var latestCrashSummary: (type: String, title: String, detail: String, topFrame: String, timeMs: Int64)?
+    private var latestCrashSummary: (type: String, title: String, detail: String, topFrame: String, thread: String?, timeMs: Int64)?
     let sessionStartDate = Date()
     /// Read from the poll loop, written from the UI. Worst case a stale read delays one publish
     /// by a poll tick — not worth a lock.
@@ -327,7 +327,7 @@ internal final class LogSenseCore {
             latestLine: last.map { "\($0.level.letter) \($0.tag) · \($0.message.prefix(120))" } ?? "",
             crash: (unseen ? crash : nil).map {
                 .init(type: $0.type, title: $0.title, detail: $0.detail,
-                      topFrame: $0.topFrame, timeMs: $0.timeMs)
+                      topFrame: $0.topFrame, thread: $0.thread, timeMs: $0.timeMs)
             }
         )
     }
@@ -352,6 +352,7 @@ internal final class LogSenseCore {
             title: record.exceptionClass ?? (record.type == "HANG" ? "Hang" : "Crash"),
             detail: record.message ?? "",
             topFrame: frame,
+            thread: record.threadName,
             timeMs: record.timestamp
         )
         statsLock.unlock()
@@ -364,6 +365,17 @@ internal final class LogSenseCore {
         )
     }
     #endif
+
+    /// The design's Clear Buffer: a real wipe. Signal hits die with the buffer they point into —
+    /// keeping them would accumulate dead jump targets.
+    @MainActor
+    func clearBuffer() {
+        buffer.clear()
+        signals.clear()
+        lastPublishedTotal = 0
+        state.snapshot = []
+        state.totalReceived = 0
+    }
 
     /// Clears the crash takeover — the activity (and any future one) returns to blue.
     @MainActor

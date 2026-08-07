@@ -27,12 +27,23 @@ internal struct LogsScreen: View {
     // "All" (id 0) is the one tab that can't be closed — a stable home to come back to.
     @State private var tabs: [SavedFilter] = LogsScreen.loadTabs()
     @State private var activeTabId: Int64 = 0
-    /// Per-tab clear watermarks — runtime-only, like Android: entry ids restart with the reader,
-    /// so persisting one would be meaningless next run.
-    @State private var clearedAt: [Int64: Int64] = [:]
-    @State private var addingTab = false
-    @State private var renamingTab = false
-    @State private var tabNameDraft = ""
+    /// Per-tab pause: a **view freeze**, not a capture pause — runtime-only, like Android's
+    /// `LogTab.paused`. The frozen rows are value copies, so they outlive buffer eviction.
+    @State private var pausedTabs: Set<Int64> = []
+    @State private var frozen: [Int64: [LogEntry]] = [:]
+    @State private var tabForm: TabFormMode?
+
+    private enum TabFormMode: Identifiable {
+        case new
+        case edit(Int64)
+
+        var id: Int64 {
+            switch self {
+            case .new: return -1
+            case .edit(let tabId): return tabId
+            }
+        }
+    }
 
     init(core: LogSenseCore, onDone: (() -> Void)?) {
         self.core = core
@@ -42,13 +53,24 @@ internal struct LogsScreen: View {
 
     // ponytail: filtering re-runs on each ~1 Hz publish over the whole buffer. Fine at real
     // volumes for a debug tool; move off-main behind a task if it ever shows in a profile.
-    private var displayed: [LogEntry] {
-        let visible = Array(state.snapshot.since(clearedAt[activeTabId] ?? 0))
-        let filter = LogFilter(minLevel: minLevel, query: query)
+    private func filteredRows(minLevel: LogLevel, query: String) -> [LogEntry] {
+        let visible = state.snapshot
         if query.isEmpty && minLevel == .debug { return visible }
-        let predicate = LogQuery.compile(filter)
+        let predicate = LogQuery.compile(LogFilter(minLevel: minLevel, query: query))
         return visible.filter(predicate)
     }
+
+    /// The active tab's live view of the stream, ignoring any freeze.
+    private var liveFiltered: [LogEntry] {
+        filteredRows(minLevel: minLevel, query: query)
+    }
+
+    private var displayed: [LogEntry] {
+        if pausedTabs.contains(activeTabId) { return frozen[activeTabId] ?? [] }
+        return liveFiltered
+    }
+
+    private var isActiveTabPaused: Bool { pausedTabs.contains(activeTabId) }
 
     private static func loadTabs() -> [SavedFilter] {
         var loaded = Prefs.savedFilters()
@@ -91,6 +113,7 @@ internal struct LogsScreen: View {
         NavigationStack {
             VStack(spacing: 0) {
                 header(rows: rows)
+                if isActiveTabPaused { frozenTabBanner }
                 if state.status == .paused { pausedBanner }
                 content(rows: rows, matches: matches)
             }
@@ -114,37 +137,34 @@ internal struct LogsScreen: View {
                 query = "tag:\"\(tag)\""
             }
         }
-        .alert("New tab", isPresented: $addingTab) {
-            TextField("Name", text: $tabNameDraft)
-            Button("Add") {
-                let name = tabNameDraft.trimmingCharacters(in: .whitespaces)
-                guard !name.isEmpty else { return }
-                let next = SavedFilter(
-                    id: (tabs.map(\.id).max() ?? 0) + 1,
-                    name: name,
-                    filter: LogFilter(minLevel: minLevel, query: query),
-                    viewMode: viewMode
-                )
-                tabs.append(next)
-                Prefs.setSavedFilters(tabs)
-                selectTab(next.id)
-                tabNameDraft = ""
-            }
-            Button("Cancel", role: .cancel) { tabNameDraft = "" }
-        } message: {
-            Text("Starts from the current filter, level and density; the tab keeps its own from here on.")
-        }
-        .alert("Rename tab", isPresented: $renamingTab) {
-            TextField("Name", text: $tabNameDraft)
-            Button("Rename") {
-                let name = tabNameDraft.trimmingCharacters(in: .whitespaces)
-                if !name.isEmpty, let index = tabs.firstIndex(where: { $0.id == activeTabId }) {
-                    tabs[index].name = name
+        .sheet(item: $tabForm) { mode in
+            switch mode {
+            case .new:
+                TabFormSheet(title: "New Tab", confirm: "Add", initial: nil) { draft in
+                    let next = SavedFilter(
+                        id: (tabs.map(\.id).max() ?? 0) + 1,
+                        name: draft.name,
+                        filter: LogFilter(minLevel: draft.minLevel, query: draft.query),
+                        viewMode: draft.viewMode
+                    )
+                    tabs.append(next)
                     Prefs.setSavedFilters(tabs)
+                    selectTab(next.id)
                 }
-                tabNameDraft = ""
+            case .edit(let tabId):
+                TabFormSheet(
+                    title: "Tab Settings",
+                    confirm: "Done",
+                    initial: tabs.first { $0.id == tabId }
+                ) { draft in
+                    guard let index = tabs.firstIndex(where: { $0.id == tabId }) else { return }
+                    tabs[index].name = draft.name
+                    tabs[index].filter = LogFilter(minLevel: draft.minLevel, query: draft.query)
+                    tabs[index].viewMode = draft.viewMode
+                    Prefs.setSavedFilters(tabs)
+                    if tabId == activeTabId { selectTab(tabId) }
+                }
             }
-            Button("Cancel", role: .cancel) { tabNameDraft = "" }
         }
     }
 
@@ -169,8 +189,37 @@ internal struct LogsScreen: View {
     private func closeTab(_ id: Int64) {
         guard id != 0 else { return }
         tabs.removeAll { $0.id == id }
+        pausedTabs.remove(id)
+        frozen[id] = nil
         Prefs.setSavedFilters(tabs)
         if activeTabId == id { selectTab(0) }
+    }
+
+    /// Freezes what that tab shows right now; capture keeps running for every tab.
+    private func pauseTab(_ id: Int64) {
+        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        frozen[id] = id == activeTabId
+            ? liveFiltered
+            : filteredRows(minLevel: tab.filter.minLevel, query: tab.filter.query)
+        pausedTabs.insert(id)
+    }
+
+    private func resumeTab(_ id: Int64) {
+        pausedTabs.remove(id)
+        frozen[id] = nil
+    }
+
+    /// "Starting a custom tab from everything is the common way to make one."
+    private func duplicateTab(_ tab: SavedFilter) {
+        let next = SavedFilter(
+            id: (tabs.map(\.id).max() ?? 0) + 1,
+            name: tab.id == 0 ? "All copy" : "\(tab.name) copy",
+            filter: tab.filter,
+            viewMode: tab.viewMode
+        )
+        tabs.append(next)
+        Prefs.setSavedFilters(tabs)
+        selectTab(next.id)
     }
 
     private var tabsRow: some View {
@@ -178,37 +227,65 @@ internal struct LogsScreen: View {
             HStack(spacing: 7) {
                 ForEach(tabs, id: \.id) { tab in
                     let isActive = tab.id == activeTabId
+                    let isPaused = pausedTabs.contains(tab.id)
                     Button {
                         selectTab(tab.id)
                     } label: {
-                        Text(tab.name)
-                            .font(.system(size: 13, weight: isActive ? .semibold : .medium))
-                            .padding(.horizontal, 13)
-                            .padding(.vertical, 6)
-                            .background(isActive ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
-                            .foregroundStyle(isActive ? .white : .primary)
+                        HStack(spacing: 5) {
+                            if isPaused {
+                                Image(systemName: "pause.fill").font(.system(size: 9, weight: .bold))
+                            }
+                            Text(tab.name)
+                                .font(.system(size: 13, weight: isActive || isPaused ? .semibold : .medium))
+                        }
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 6)
+                        .background(
+                            isPaused ? Color(hex: 0xFF9F0A) : (isActive ? Color.accentColor : Color(.tertiarySystemFill)),
+                            in: Capsule()
+                        )
+                        .foregroundStyle(isPaused ? .black : (isActive ? .white : .primary))
                     }
                     .buttonStyle(.plain)
                     .contextMenu {
+                        // "All is the raw stream and has nothing to configure" — no settings,
+                        // no rename, no Close for id 0.
+                        if tab.id != 0 {
+                            Button {
+                                tabForm = .edit(tab.id)
+                            } label: {
+                                Label("Tab Settings…", systemImage: "line.3.horizontal")
+                            }
+                        }
+                        if isPaused {
+                            Button {
+                                resumeTab(tab.id)
+                            } label: {
+                                Label("Resume This Tab", systemImage: "play.fill")
+                            }
+                        } else {
+                            Button {
+                                pauseTab(tab.id)
+                            } label: {
+                                Label("Pause This Tab", systemImage: "pause.fill")
+                            }
+                        }
                         Button {
-                            tabNameDraft = tab.name
-                            selectTab(tab.id)
-                            renamingTab = true
+                            duplicateTab(tab)
                         } label: {
-                            Label("Rename…", systemImage: "pencil")
+                            Label(tab.id == 0 ? "Duplicate as New Tab" : "Duplicate", systemImage: "plus.square.on.square")
                         }
                         if tab.id != 0 {
                             Button(role: .destructive) {
                                 closeTab(tab.id)
                             } label: {
-                                Label("Close tab", systemImage: "xmark")
+                                Label("Close Tab", systemImage: "trash")
                             }
                         }
                     }
                 }
                 Button {
-                    tabNameDraft = ""
-                    addingTab = true
+                    tabForm = .new
                 } label: {
                     Image(systemName: "plus")
                         .font(.system(size: 12, weight: .semibold))
@@ -219,6 +296,38 @@ internal struct LogsScreen: View {
                 .buttonStyle(.plain)
             }
         }
+    }
+
+    /// The per-tab freeze banner: what is waiting, and the way back.
+    private var frozenTabBanner: some View {
+        let buffered = max(0, liveFiltered.count - (frozen[activeTabId]?.count ?? 0))
+        return HStack(spacing: 10) {
+            Image(systemName: "pause.fill").foregroundStyle(Color(hex: 0xFF9F0A))
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Frozen — this tab is paused")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0xFF9F0A))
+                Text("+\(buffered.formatted()) buffered · other tabs keep recording")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button {
+                resumeTab(activeTabId)
+            } label: {
+                Text("Resume")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.black)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color(hex: 0xFF9F0A), in: Capsule())
+            }
+        }
+        .padding(12)
+        .background(Color(hex: 0xFF9F0A).opacity(0.15), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color(hex: 0xFF9F0A).opacity(0.4), lineWidth: 0.5))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
     }
 
     // MARK: header
@@ -234,33 +343,50 @@ internal struct LogsScreen: View {
                 }
                 Spacer()
                 HStack(spacing: 8) {
-                    if state.status == .paused {
-                        headerButton("play.fill") { core.resume() }
+                    // Pauses the active tab — a view freeze; capture never stops.
+                    if isActiveTabPaused {
+                        Button {
+                            resumeTab(activeTabId)
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color(hex: 0xFF9F0A))
+                                .frame(width: 34, height: 34)
+                                .background(Color(hex: 0xFF9F0A).opacity(0.22), in: Circle())
+                        }
                     } else {
-                        headerButton("pause.fill") { core.pause() }
+                        headerButton("pause.fill") { pauseTab(activeTabId) }
                     }
                     headerButton("magnifyingglass") {
                         findActive.toggle()
                         if !findActive { findQuery = SearchQuery() }
                     }
+                    // The design's "View · «tab»" menu: density, line behavior, export, then the
+                    // destructive buffer wipe.
                     Menu {
                         Picker("Density", selection: $viewMode) {
                             Text("Standard").tag(ViewMode.standard)
                             Text("Compact").tag(ViewMode.compact)
                             Text("Raw").tag(ViewMode.raw)
                         }
-                        Toggle("Wrap long lines", isOn: $wrap)
+                        Toggle("Wrap Long Lines", isOn: $wrap)
                         Toggle("Autoscroll", isOn: $autoscroll)
-                        ShareLink(item: shareText(rows)) { Label("Share…", systemImage: "square.and.arrow.up") }
+                        Divider()
+                        ShareLink(item: shareText(rows)) { Label("Export…", systemImage: "square.and.arrow.up") }
                         Button {
                             showSettings = true
                         } label: {
                             Label("Settings", systemImage: "gearshape")
                         }
-                        // Clears this tab only — a watermark, not a buffer wipe: other tabs still
-                        // show the lines and signal hits still point at real entries.
-                        Button("Clear tab", role: .destructive) {
-                            clearedAt[activeTabId] = state.snapshot.last?.id ?? 0
+                        Divider()
+                        // A real wipe, per the design: signal hits die with the buffer they
+                        // point into, and frozen tabs thaw — their snapshots would lie.
+                        Button(role: .destructive) {
+                            core.clearBuffer()
+                            pausedTabs = []
+                            frozen = [:]
+                        } label: {
+                            Label("Clear Buffer", systemImage: "trash")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -307,7 +433,10 @@ internal struct LogsScreen: View {
             case .live:
                 dot(.green, pulsing: true)
                 Text("Live").foregroundStyle(.green).fontWeight(.semibold)
-                if isFiltering {
+                if !pausedTabs.isEmpty {
+                    let recording = tabs.count - tabs.filter { pausedTabs.contains($0.id) }.count
+                    Text("· \(recording) of \(tabs.count) tabs recording")
+                } else if isFiltering {
                     Text("· \(rows.count.formatted()) of \(state.snapshot.count.formatted())")
                 } else {
                     Text("· \(state.totalReceived.formatted()) lines · buffer \(core.bufferLimit.formatted())")
@@ -464,6 +593,7 @@ internal struct LogsScreen: View {
                             .listRowBackground(Color.clear)
                     }
                     .listStyle(.plain)
+                    .opacity(isActiveTabPaused ? 0.62 : 1)
                     .environment(\.defaultMinListRowHeight, 10)
                     .onAppear {
                         // First layout pass hasn't happened yet; scroll on the next runloop turn.
@@ -639,6 +769,101 @@ internal struct LogsScreen: View {
             "\(Format.time(entry.timeMs)) \(entry.level.letter) \(entry.tag): \(entry.message)"
         }
         .joined(separator: "\n")
+    }
+}
+
+// MARK: - tab form
+
+/// One sheet for New Tab and Tab Settings — "two doors to the same place is a menu that has to
+/// be read twice." Name, filter query, view and minimum level, every one scoped to this tab alone.
+private struct TabFormSheet: View {
+    let title: String
+    let confirm: String
+    let onSave: (Draft) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    struct Draft {
+        var name: String
+        var query: String
+        var viewMode: ViewMode
+        var minLevel: LogLevel
+    }
+
+    @State private var draft: Draft
+
+    init(title: String, confirm: String, initial: SavedFilter?, onSave: @escaping (Draft) -> Void) {
+        self.title = title
+        self.confirm = confirm
+        self.onSave = onSave
+        _draft = State(initialValue: Draft(
+            name: initial?.name ?? "",
+            query: initial?.filter.query ?? "",
+            viewMode: initial?.viewMode ?? .standard,
+            minLevel: initial?.filter.minLevel ?? .debug
+        ))
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    LabeledContent("Name") {
+                        TextField("Payments", text: $draft.name)
+                            .multilineTextAlignment(.trailing)
+                    }
+                    LabeledContent("Filter") {
+                        TextField("tag:PaymentSDK upi", text: $draft.query)
+                            .multilineTextAlignment(.trailing)
+                            .font(.system(size: 14, design: .monospaced))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                    }
+                } footer: {
+                    Text("Same query language as the filter field. Leave it empty for an unfiltered tab.")
+                }
+
+                Section("View") {
+                    Picker("View", selection: $draft.viewMode) {
+                        Text("Standard").tag(ViewMode.standard)
+                        Text("Compact").tag(ViewMode.compact)
+                        Text("Raw").tag(ViewMode.raw)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section("Minimum level") {
+                    Picker("Minimum level", selection: $draft.minLevel) {
+                        ForEach(LogLevel.allCases, id: \.self) { level in
+                            Text(String(level.letter))
+                                .font(.system(.body, design: .monospaced))
+                                .tag(level)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                }
+
+                Section {
+                } footer: {
+                    Text("A tab keeps its own filter, scroll position and pause state. Capture keeps running for every tab, including the ones you are not looking at. Custom tabs can be closed at any time; All cannot.")
+                }
+            }
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(confirm) {
+                        draft.name = draft.name.trimmingCharacters(in: .whitespaces)
+                        onSave(draft)
+                        dismiss()
+                    }
+                    .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
     }
 }
 
