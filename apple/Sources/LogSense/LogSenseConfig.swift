@@ -39,6 +39,13 @@ public struct LogSenseConfig {
     /// the Xcode console is unaffected.
     public var captureStandardOutput: Bool
 
+    /// Flag screens that outlive their dismissal — a dismissed/popped view controller still in
+    /// memory seconds later means a retain cycle or a lingering strong reference; it lands as a
+    /// "Screen leaked" signal. This is the one feature that swizzles (`viewDidDisappear`,
+    /// observe-only), which is why it has its own switch. Screens the host deliberately caches
+    /// will be flagged too — mute the signal or turn this off if that's your architecture.
+    public var detectLeakedScreens: Bool
+
     /// Number of most recent log lines attached to a crash report as context.
     public var crashContextLines: Int
 
@@ -91,6 +98,7 @@ public struct LogSenseConfig {
         maxBufferedLines: Int = 50_000,
         captureCrashes: Bool = true,
         captureStandardOutput: Bool = true,
+        detectLeakedScreens: Bool = true,
         crashContextLines: Int = 200,
         retentionDays: Int = 7,
         maxStoredEvents: Int = 1_000,
@@ -107,6 +115,7 @@ public struct LogSenseConfig {
         self.maxBufferedLines = maxBufferedLines
         self.captureCrashes = captureCrashes
         self.captureStandardOutput = captureStandardOutput
+        self.detectLeakedScreens = detectLeakedScreens
         self.crashContextLines = crashContextLines
         self.retentionDays = retentionDays
         self.maxStoredEvents = maxStoredEvents

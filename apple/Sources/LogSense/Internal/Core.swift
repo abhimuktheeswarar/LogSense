@@ -129,6 +129,18 @@ internal final class LogSenseCore {
         }
         self.lifecycle = lifecycle
         #endif
+        LeakWatch.onLeak = { [weak self] detail in
+            self?.signals.record(
+                BuiltInSignals.leakedScreen,
+                timeMs: Int64(Date().timeIntervalSince1970 * 1000),
+                detail: detail
+            )
+        }
+        #if os(iOS)
+        if config.detectLeakedScreens {
+            Task { @MainActor in LeakWatch.installScreenWatch() }
+        }
+        #endif
         if config.captureStandardOutput {
             stdoutReader.onLines = { [weak self] lines in self?.ingestStdout(lines) }
             stdoutReader.start()

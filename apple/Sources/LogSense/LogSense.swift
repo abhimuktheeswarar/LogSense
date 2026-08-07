@@ -27,6 +27,27 @@ public enum LogSense {
         }
     }
 
+    /// Asserts that `object` is about to die: if it is still in memory after `timeout` seconds,
+    /// a "Screen leaked" signal fires naming it — a retain cycle or a lingering strong reference
+    /// kept it alive. The screen case is automatic (`detectLeakedScreens`); this is the same
+    /// check for anything else:
+    ///
+    /// ```swift
+    /// deinit paranoia, view models, session-scoped services:
+    /// LogSense.watchDeallocation(of: viewModel)
+    /// ```
+    public static func watchDeallocation(
+        of object: AnyObject,
+        name: String? = nil,
+        timeout: TimeInterval = 3
+    ) {
+        LeakWatch.expectDealloc(
+            of: object,
+            name: name ?? String(describing: type(of: object)),
+            timeout: timeout
+        )
+    }
+
     #if os(iOS)
     /// Shows the LogSense UI in its own overlay window above the host app — LogSense keeps its
     /// place while the host navigates underneath. No-op until `start` has been called.

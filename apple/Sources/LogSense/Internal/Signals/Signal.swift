@@ -75,6 +75,7 @@ internal enum BuiltInSignals {
     static let thermalState = Signal(id: "memory.thermal", label: "Thermal pressure", category: .memory)
     static let foreground = Signal(id: "lifecycle.foreground", label: "Became active", category: .lifecycle)
     static let firstFrame = Signal(id: "lifecycle.first_frame", label: "First frame displayed", category: .lifecycle)
+    static let leakedScreen = Signal(id: "lifecycle.leaked_screen", label: "Screen leaked", category: .lifecycle)
     static let cpuException = Signal(id: "resource.cpu", label: "Excessive CPU", category: .resource)
     static let diskWrites = Signal(id: "resource.disk", label: "Excessive disk writes", category: .resource)
 
@@ -125,6 +126,7 @@ internal enum BuiltInSignals {
         thermalState,
         foreground,
         firstFrame,
+        leakedScreen,
         cpuException,
         diskWrites,
     ]

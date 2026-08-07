@@ -1,6 +1,32 @@
 import SwiftUI
 import OSLog
+import UIKit
 import LogSense
+
+/// A screen that leaks by design: a global strongly retains it past its dismissal, so
+/// LogSense's leaked-screen signal fires ~3s after it goes away.
+private var leakedRetainer: [UIViewController] = []
+
+final class LeakyViewController: UIViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        let label = UILabel()
+        label.text = "This screen leaks on purpose.\nIt dismisses itself in a second."
+        label.numberOfLines = 0
+        label.textAlignment = .center
+        label.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(label)
+        NSLayoutConstraint.activate([
+            label.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            label.centerYAnchor.constraint(equalTo: view.centerYAnchor),
+        ])
+        leakedRetainer.append(self) // the "forgotten" strong reference
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1) { [weak self] in
+            self?.dismiss(animated: true)
+        }
+    }
+}
 
 /// Buttons that exercise every capture path, one per claim the SDK makes.
 struct ContentView: View {
@@ -61,6 +87,7 @@ struct ContentView: View {
                 }
 
                 Section("Trouble") {
+                    Button("Leak a screen (retain cycle)") { presentLeakyScreen() }
                     Button("Custom signal line") { logger.error("Demo trouble: payment declined") }
                     Button("Unsatisfiable constraints line") {
                         logger.error("Unable to simultaneously satisfy constraints.")
@@ -80,6 +107,13 @@ struct ContentView: View {
         .onAppear(perform: emitStartupChatter)
     }
 
+    private func presentLeakyScreen() {
+        let scene = UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .first { $0.activationState == .foregroundActive }
+        scene?.keyWindow?.rootViewController?.present(LeakyViewController(), animated: true)
+    }
+
     /// A few lines on launch so the stream is never empty on first open; auto-opens LogSense when
     /// launched with LOGSENSE_AUTO_OPEN=1 (used by scripted simulator runs).
     private func emitStartupChatter() {
@@ -97,6 +131,7 @@ struct ContentView: View {
         if ProcessInfo.processInfo.environment["LOGSENSE_AUTO_OPEN"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { LogSense.present() }
         }
+        _ = leakedRetainer // silence unused warnings; see presentLeakyScreen
         if ProcessInfo.processInfo.environment["LOGSENSE_CRASH_AFTER"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
                 NSException(name: .invalidArgumentException,
