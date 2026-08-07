@@ -43,6 +43,23 @@ equivalent. The entry points, closest-first:
   `LogSenseView` in a debug menu or hidden gesture of your choosing. LogSense deliberately claims
   no global gesture: shake, in particular, is often taken.
 
+## Live Activity (iOS 16.2+)
+
+The stand-in for Android's ongoing capture notification: one activity per capture session in the
+Dynamic Island and on the Lock Screen — line/event/crash counts, a session clock, amber while
+paused, and a red takeover with the exception and throwing frame the moment a crash is caught
+(it stays red until the report is seen). On iOS 17+ the buttons (Pause, Resume, Stop, Keep
+recording, Open) are App Intents that work without unlocking the phone.
+
+Two integration steps, because ActivityKit requires the UI to live in *your* widget extension:
+
+1. App target: `NSSupportsLiveActivities = YES`.
+2. Your widget bundle: add `LogSenseLiveActivity()` — one line; create a widget extension if you
+   don't have one.
+
+Without the extension, everything else in LogSense still works — the activity simply never
+appears. QA can switch it off under Settings → Live Activity; capture continues silently.
+
 There is no separate no-op artifact: keep the calls behind `#if DEBUG` and dead-code stripping
 removes the library from release builds.
 
