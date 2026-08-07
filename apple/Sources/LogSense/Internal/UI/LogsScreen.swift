@@ -19,6 +19,7 @@ internal struct LogsScreen: View {
     @State private var findQuery = SearchQuery()
     @State private var findActive = false
     @State private var findIndex = 0
+    @State private var selectedEntry: LogEntry?
 
     init(core: LogSenseCore, onDone: (() -> Void)?) {
         self.core = core
@@ -44,6 +45,15 @@ internal struct LogsScreen: View {
         return displayed.filter { m.matches($0.message) || m.matches($0.tag) }.map(\.id)
     }
 
+    /// Hits keyed by the line they matched, for the gutter/pill on rows.
+    private var hitsByEntryId: [Int64: SignalHit] {
+        var out: [Int64: SignalHit] = [:]
+        for hit in state.signalHits {
+            if let id = hit.entryId { out[id] = hit }
+        }
+        return out
+    }
+
     var body: some View {
         let rows = displayed
         let matches = matchIds
@@ -54,6 +64,11 @@ internal struct LogsScreen: View {
         }
         .safeAreaInset(edge: .bottom) {
             if findActive { findBar(matches: matches) }
+        }
+        .sheet(item: $selectedEntry) { entry in
+            LogLineSheet(entry: entry, hit: hitsByEntryId[entry.id]) { tag in
+                query = "tag:\"\(tag)\""
+            }
         }
     }
 
@@ -265,11 +280,14 @@ internal struct LogsScreen: View {
         if rows.isEmpty {
             emptyState(rows: rows).frame(maxHeight: .infinity)
         } else {
+            let hits = hitsByEntryId
             ScrollViewReader { proxy in
                 List {
                     ForEach(rows) { entry in
-                        row(entry)
+                        row(entry, hit: hits[entry.id])
                             .id(entry.id)
+                            .contentShape(Rectangle())
+                            .onTapGesture { selectedEntry = entry }
                             .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                             .listRowSeparator(viewMode == .standard ? .visible : .hidden)
                             .listRowBackground(rowBackground(entry, matches: matches))
@@ -320,11 +338,23 @@ internal struct LogsScreen: View {
     }
 
     @ViewBuilder
-    private func row(_ entry: LogEntry) -> some View {
-        switch viewMode {
-        case .standard: StandardRow(entry: entry, wrap: wrap, highlight: findActive ? matcher : nil)
-        case .compact: CompactRow(entry: entry)
-        case .raw: RawRow(entry: entry, wrap: wrap)
+    private func row(_ entry: LogEntry, hit: SignalHit?) -> some View {
+        let base = Group {
+            switch viewMode {
+            case .standard:
+                StandardRow(entry: entry, wrap: wrap, highlight: findActive ? matcher : nil, hit: hit)
+            case .compact:
+                CompactRow(entry: entry)
+            case .raw:
+                RawRow(entry: entry, wrap: wrap)
+            }
+        }
+        if let hit {
+            base.overlay(alignment: .leading) {
+                Rectangle().fill(hit.signal.category.color).frame(width: 3)
+            }
+        } else {
+            base
         }
     }
 
@@ -407,6 +437,7 @@ private struct StandardRow: View {
     let entry: LogEntry
     let wrap: Bool
     let highlight: TextMatcher?
+    let hit: SignalHit?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -423,6 +454,14 @@ private struct StandardRow: View {
                 HStack(spacing: 9) {
                     Text(Format.time(entry.timeMs))
                     Text(entry.tag).foregroundStyle(.secondary)
+                    if let hit {
+                        Text(hit.signal.label)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(hit.signal.category.color)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 1.5)
+                            .background(hit.signal.category.color.opacity(0.13), in: Capsule())
+                    }
                 }
                 .font(.system(size: 10.5))
                 .foregroundStyle(.tertiary)

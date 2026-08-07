@@ -22,6 +22,8 @@ internal final class LogSenseState: ObservableObject {
     @Published var frozenAtMs: Int64 = 0
     /// Stored crash reports, newest first, across sessions.
     @Published var crashes: [StoredCrash] = []
+    /// Signal hits, oldest first, in-memory — they die with the buffer they point into.
+    @Published var signalHits: [SignalHit] = []
 }
 
 /// The process singleton every part of LogSense hangs off. No DI framework — this is passed down
@@ -41,8 +43,10 @@ internal final class LogSenseCore {
 
     private let logReader = LogReader()
     private let stdoutReader = StdoutReader()
+    private(set) var signals: SignalDetector!
     #if os(iOS)
     private var metricKit: MetricKitCollector?
+    private var lifecycle: LifecycleSignals?
     #endif
     private var pollTask: Task<Void, Never>?
     /// Read from the poll loop, written from the UI. Worst case a stale read delays one publish
@@ -88,6 +92,17 @@ internal final class LogSenseCore {
     }
 
     private func startCapture() {
+        signals = SignalDetector(config: config, muted: { Prefs.mutedSignals() })
+        signals.onChange = { [weak self] hits in
+            Task { @MainActor [weak self] in self?.state.signalHits = hits }
+        }
+        #if os(iOS)
+        let lifecycle = LifecycleSignals()
+        lifecycle.start { [weak self] signal, ts, detail in
+            self?.signals.record(signal, timeMs: ts, detail: detail)
+        }
+        self.lifecycle = lifecycle
+        #endif
         if config.captureStandardOutput {
             stdoutReader.onLines = { [weak self] lines in self?.ingestStdout(lines) }
             stdoutReader.start()
@@ -116,6 +131,9 @@ internal final class LogSenseCore {
         #if os(iOS)
         let collector = MetricKitCollector(deviceInfo: deviceInfo)
         collector.onCrash = { [weak self] record in self?.storeCrash(record, notify: true) }
+        collector.onResourceDiagnostic = { [weak self] signal, ts, detail in
+            self?.signals.record(signal, timeMs: ts, detail: detail)
+        }
         collector.start()
         metricKit = collector
         #endif
@@ -195,9 +213,10 @@ internal final class LogSenseCore {
         // No publish here — the poll tick publishes, keeping one cadence for everything.
     }
 
-    /// One hook fans out each batch to the detectors (signals in Phase 3, analytics in Phase 4),
-    /// each guarded so a fault in one can never kill capture.
+    /// One hook fans out each batch to the detectors on the ingesting thread, so matching happens
+    /// once per line rather than per view render.
     private func onBatch(_ batch: [LogEntry]) {
+        signals?.process(batch)
     }
 
     private func publishIfNeeded() {

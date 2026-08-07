@@ -89,6 +89,11 @@ struct ContentView: View {
         NSLog("NSLog line at startup")
         print("print line at startup")
         analytics.info("screen_view screen=Home, source=launch")
+        // Late enough to be the newest lines once LogSense is open — keeps scripted screenshots honest.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) {
+            logger.error("Demo trouble: payment declined")
+            logger.error("Unable to simultaneously satisfy constraints.")
+        }
         if ProcessInfo.processInfo.environment["LOGSENSE_AUTO_OPEN"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { LogSense.present() }
         }
