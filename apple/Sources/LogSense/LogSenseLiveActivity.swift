@@ -298,6 +298,10 @@ internal struct LockScreenCard: View {
             .padding(.bottom, 16)
             .opacity(0.75)
         } else {
+            // The Lock Screen presentation has a hard ~160pt height budget — content over it gets
+            // clipped at both edges, eating the margins (the recurring "cropped card"). Header +
+            // tiles + 32pt actions fit; a separate title would repeat the header's subtitle and
+            // blow the budget, so there isn't one.
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 10) {
                     ExpandedHeader(context: context)
@@ -305,35 +309,31 @@ internal struct LockScreenCard: View {
                     ExpandedTrailing(context: context, relativeClock: true)
                 }
                 if context.state.phase == .crashed, let crash = context.state.crash {
-                    VStack(alignment: .leading, spacing: 4) {
+                    VStack(alignment: .leading, spacing: 3) {
                         Text(crash.title)
                             .font(.system(size: 19, weight: .bold))
                             .lineLimit(1)
-                        if !crash.detail.isEmpty {
-                            Text(crash.detail)
+                        let bits = [crash.topFrame, crash.thread ?? "", Format.time(crash.timeMs)]
+                            .filter { !$0.isEmpty }
+                        if !bits.isEmpty {
+                            Text(bits.joined(separator: " · "))
                                 .font(.system(size: 13))
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
                         }
-                        if !crash.topFrame.isEmpty {
-                            Ticker(text: crash.topFrame, tint: .black.opacity(0.25))
-                        }
                     }
                 } else {
-                    Text(context.state.phase == .paused ? "Capture paused" : "Recording logs")
-                        .font(.system(size: 16, weight: .semibold))
                     HStack(spacing: 8) {
                         StatTile(value: context.state.lines, label: "lines")
                         StatTile(value: context.state.events, label: "events")
                         StatTile(value: context.state.crashes, label: "crashes")
                     }
                 }
-                ActivityButtons(context: context)
-                    .padding(.top, 2)
+                ActivityButtons(context: context, slim: true)
             }
             .padding(.horizontal, 16)
-            .padding(.top, 14)
-            .padding(.bottom, 18)
+            .padding(.top, 12)
+            .padding(.bottom, 14)
         }
     }
 }

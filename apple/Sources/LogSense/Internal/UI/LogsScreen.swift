@@ -141,7 +141,7 @@ internal struct LogsScreen: View {
         .sheet(item: $tabForm) { mode in
             switch mode {
             case .new:
-                TabFormSheet(title: "New Tab", confirm: "Add", initial: nil) { draft in
+                TabFormSheet(title: "New Tab", confirm: "Add", initial: nil, defaultName: nextDefaultTabName()) { draft in
                     let next = SavedFilter(
                         id: (tabs.map(\.id).max() ?? 0) + 1,
                         name: draft.name,
@@ -208,6 +208,14 @@ internal struct LogsScreen: View {
     private func resumeTab(_ id: Int64) {
         pausedTabs.remove(id)
         frozen[id] = nil
+    }
+
+    /// "Log 1", "Log 2", … — the first number not already taken, so the name is never mandatory.
+    private func nextDefaultTabName() -> String {
+        let names = Set(tabs.map(\.name))
+        var n = 1
+        while names.contains("Log \(n)") { n += 1 }
+        return "Log \(n)"
     }
 
     /// "Starting a custom tab from everything is the common way to make one."
@@ -351,10 +359,11 @@ internal struct LogsScreen: View {
                 }
                 Spacer()
                 HStack(spacing: 8) {
-                    // Pauses the active tab — a view freeze; capture never stops.
-                    if isActiveTabPaused {
+                    // Like Android's app bar pause: global — every tab stops. Per-tab freezing
+                    // lives in the overflow menu and the tab's long-press.
+                    if state.status == .paused {
                         Button {
-                            resumeTab(activeTabId)
+                            core.resume()
                         } label: {
                             Image(systemName: "play.fill")
                                 .font(.system(size: 14, weight: .semibold))
@@ -363,7 +372,7 @@ internal struct LogsScreen: View {
                                 .background(Color(hex: 0xFF9F0A).opacity(0.22), in: Circle())
                         }
                     } else {
-                        headerButton("pause.fill") { pauseTab(activeTabId) }
+                        headerButton("pause.fill") { core.pause() }
                     }
                     headerButton("magnifyingglass") {
                         findActive.toggle()
@@ -379,6 +388,19 @@ internal struct LogsScreen: View {
                         }
                         Toggle("Wrap Long Lines", isOn: $wrap)
                         Toggle("Autoscroll", isOn: $autoscroll)
+                        if isActiveTabPaused {
+                            Button {
+                                resumeTab(activeTabId)
+                            } label: {
+                                Label("Resume This Tab", systemImage: "play.fill")
+                            }
+                        } else {
+                            Button {
+                                pauseTab(activeTabId)
+                            } label: {
+                                Label("Pause This Tab", systemImage: "pause.fill")
+                            }
+                        }
                         Divider()
                         ShareLink(item: shareText(rows)) { Label("Export…", systemImage: "square.and.arrow.up") }
                         Button {
@@ -459,10 +481,7 @@ internal struct LogsScreen: View {
     }
 
     private func dot(_ color: Color, pulsing: Bool) -> some View {
-        Circle()
-            .fill(color)
-            .frame(width: 7, height: 7)
-            .modifier(PulseEffect(active: pulsing))
+        PulsingDot(color: color, active: pulsing)
     }
 
     private var isFiltering: Bool { !query.isEmpty || minLevel != .debug }
@@ -798,12 +817,21 @@ private struct TabFormSheet: View {
 
     @State private var draft: Draft
 
-    init(title: String, confirm: String, initial: SavedFilter?, onSave: @escaping (Draft) -> Void) {
+    private let defaultName: String
+
+    init(
+        title: String,
+        confirm: String,
+        initial: SavedFilter?,
+        defaultName: String = "",
+        onSave: @escaping (Draft) -> Void
+    ) {
         self.title = title
         self.confirm = confirm
         self.onSave = onSave
+        self.defaultName = initial?.name ?? defaultName
         _draft = State(initialValue: Draft(
-            name: initial?.name ?? "",
+            name: initial?.name ?? defaultName,
             query: initial?.filter.query ?? "",
             viewMode: initial?.viewMode ?? .standard,
             minLevel: initial?.filter.minLevel ?? .debug
@@ -863,10 +891,11 @@ private struct TabFormSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button(confirm) {
                         draft.name = draft.name.trimmingCharacters(in: .whitespaces)
+                        // The name is never mandatory — a cleared field falls back to the default.
+                        if draft.name.isEmpty { draft.name = defaultName }
                         onSave(draft)
                         dismiss()
                     }
-                    .disabled(draft.name.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             }
         }
@@ -1177,15 +1206,29 @@ internal struct EmptyStateView: View {
     }
 }
 
-private struct PulseEffect: ViewModifier {
+/// TimelineView-driven blink instead of a `repeatForever` animation: a persistent repeating
+/// animation on a view whose layout shifts (the status text next to it re-renders every second)
+/// leaks into those position changes and the dot rides every reflow. Deriving opacity from the
+/// clock animates nothing but opacity.
+private struct PulsingDot: View {
+    let color: Color
     let active: Bool
-    @State private var dim = false
 
-    func body(content: Content) -> some View {
-        content
-            .opacity(active && dim ? 0.25 : 1)
-            .animation(active ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true) : .default, value: dim)
-            .onAppear { if active { dim = true } }
+    var body: some View {
+        if active {
+            TimelineView(.periodic(from: .now, by: 0.9)) { timeline in
+                let on = Int(timeline.date.timeIntervalSinceReferenceDate / 0.9) % 2 == 0
+                Circle()
+                    .fill(color)
+                    .frame(width: 7, height: 7)
+                    .opacity(on ? 1 : 0.3)
+                    .animation(.easeInOut(duration: 0.85), value: on)
+            }
+        } else {
+            Circle()
+                .fill(color)
+                .frame(width: 7, height: 7)
+        }
     }
 }
 
