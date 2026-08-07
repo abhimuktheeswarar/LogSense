@@ -84,7 +84,11 @@ public struct LogSenseLiveActivity: Widget {
                         .padding(.trailing, 4)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
+                    // Breathing room against the island's huge corner radius — without it the
+                    // action row's corners read as cropped by the pill.
                     ExpandedBottom(context: context)
+                        .padding(.horizontal, 8)
+                        .padding(.bottom, 8)
                 }
             } compactLeading: {
                 if context.state.phase == .crashed {
@@ -179,9 +183,13 @@ private struct ExpandedHeader: View {
 }
 
 /// The trailing slot is narrow on the expanded island — a dot and the clock, nothing more.
+/// `relativeClock` swaps the min:sec timer for a system-paced relative time: the locked Lock
+/// Screen throttles per-second ticks and renders the seconds as dashes ("9:––"), so the lock
+/// card shows "9 min" instead of pretending to count.
 @available(iOS 16.2, *)
 private struct ExpandedTrailing: View {
     let context: ActivityViewContext<LogSenseActivityAttributes>
+    var relativeClock: Bool = false
 
     var body: some View {
         switch context.state.phase {
@@ -205,13 +213,21 @@ private struct ExpandedTrailing: View {
                 Circle()
                     .fill(context.state.phase == .paused ? Color(hex: 0xFF9F0A) : Color(hex: 0x30D158))
                     .frame(width: 7, height: 7)
-                SessionClock(start: context.state.sessionStart)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    // A FIXED frame, deliberately: the timer Text's ideal width is effectively
-                    // unbounded (fixedSize blanks the whole activity past this node), and a
-                    // too-tight maxWidth squeezes the digits into dashes. 56pt fits h:mm:ss.
-                    .frame(width: 56, alignment: .trailing)
+                if relativeClock {
+                    Text(context.state.sessionStart, style: .relative)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .frame(width: 64, alignment: .trailing)
+                } else {
+                    SessionClock(start: context.state.sessionStart)
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        // A FIXED frame, deliberately: the timer Text's ideal width is effectively
+                        // unbounded (fixedSize blanks the whole activity past this node), and a
+                        // too-tight maxWidth squeezes the digits into dashes. 56pt fits h:mm:ss.
+                        .frame(width: 56, alignment: .trailing)
+                }
             }
         }
     }
@@ -286,7 +302,7 @@ internal struct LockScreenCard: View {
                 HStack(spacing: 10) {
                     ExpandedHeader(context: context)
                     Spacer()
-                    ExpandedTrailing(context: context)
+                    ExpandedTrailing(context: context, relativeClock: true)
                 }
                 if context.state.phase == .crashed, let crash = context.state.crash {
                     VStack(alignment: .leading, spacing: 4) {
@@ -317,7 +333,7 @@ internal struct LockScreenCard: View {
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
-            .padding(.bottom, 16)
+            .padding(.bottom, 18)
         }
     }
 }
