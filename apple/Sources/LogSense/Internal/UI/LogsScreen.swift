@@ -514,9 +514,9 @@ internal struct LogsScreen: View {
                     let recording = tabs.count - tabs.filter { pausedTabs.contains($0.id) }.count
                     Text("· \(recording) of \(tabs.count) tabs recording")
                 } else if isFiltering {
-                    Text("· \(rows.count.formatted()) of \(state.snapshot.count.formatted())")
+                    Text("· \(rows.count.formatted()) of \(state.snapshot.count.formatted()) shown")
                 } else {
-                    Text("· \(state.totalReceived.formatted()) lines · buffer \(core.bufferLimit.formatted())")
+                    Text("· \(state.totalReceived.formatted()) lines")
                 }
             case .paused:
                 dot(.orange, pulsing: false)
@@ -1322,11 +1322,30 @@ internal struct EmptyStateView: View {
     }
 }
 
+/// The design's "capture continues" reassurance line for the Events, Crashes and Signals tabs:
+/// pulsing dot + Live + a per-tab detail. Logs keeps its richer three-state status row.
+internal struct LiveStatusRow: View {
+    let detail: String
+
+    var body: some View {
+        HStack(spacing: 7) {
+            PulsingDot(color: .green, active: true)
+            Text("Live").foregroundStyle(.green).fontWeight(.semibold)
+            Text("· \(detail)")
+        }
+        .font(.system(size: 12.5, weight: .medium))
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+    }
+}
+
 /// TimelineView-driven blink instead of a `repeatForever` animation: a persistent repeating
 /// animation on a view whose layout shifts (the status text next to it re-renders every second)
 /// leaks into those position changes and the dot rides every reflow. Deriving opacity from the
 /// clock animates nothing but opacity.
-private struct PulsingDot: View {
+internal struct PulsingDot: View {
     let color: Color
     let active: Bool
 

@@ -46,7 +46,11 @@ internal struct EventsScreen: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            // In-layout like Signals, not a top safeAreaInset — an always-present inset
+            // swallows the large navigation title.
+            VStack(spacing: 0) {
+                LiveStatusRow(detail: "\(state.events.count.formatted()) captured · \(tags.count) \(tags.count == 1 ? "tag" : "tags")")
+                if tags.count > 1 { tagPills }
                 if state.events.isEmpty {
                     EmptyStateView(
                         icon: "chart.bar.xaxis",
@@ -54,6 +58,7 @@ internal struct EventsScreen: View {
                         body: "Analytics events lifted out of the log stream land here, grouped by run. Configure captured tags in LogSenseConfig.",
                         actionLabel: nil, action: nil
                     )
+                    .frame(maxHeight: .infinity)
                 } else if displayed.isEmpty {
                     EmptyStateView(
                         icon: "line.3.horizontal.decrease",
@@ -62,6 +67,7 @@ internal struct EventsScreen: View {
                         actionLabel: "Clear filters",
                         action: { query = ""; tagScope = nil }
                     )
+                    .frame(maxHeight: .infinity)
                 } else {
                     List {
                         ForEach(groups, id: \.0.id) { meta, events in
@@ -85,9 +91,6 @@ internal struct EventsScreen: View {
             .navigationTitle("Events")
             .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always),
                         prompt: "Name, params or tag")
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if tags.count > 1 { tagPills }
-            }
             .toolbar {
                 if let onDone {
                     ToolbarItem(placement: .topBarLeading) {

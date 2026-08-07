@@ -28,33 +28,10 @@ internal struct CrashesScreen: View {
 
     var body: some View {
         NavigationStack {
-            Group {
-                if state.crashes.isEmpty {
-                    EmptyStateView(
-                        icon: "checkmark.shield",
-                        title: "No crashes",
-                        body: "Reports that survive the process land here — exceptions immediately, signal crashes and hangs on the next launch.",
-                        actionLabel: nil, action: nil
-                    )
-                } else {
-                    List {
-                        ForEach(groups, id: \.0.id) { meta, crashes in
-                            Section {
-                                ForEach(crashes) { crash in
-                                    NavigationLink(value: crash) {
-                                        CrashRow(crash: crash)
-                                    }
-                                }
-                                .onDelete { offsets in
-                                    for offset in offsets { core.deleteCrash(id: crashes[offset].id) }
-                                }
-                            } header: {
-                                sessionHeader(meta)
-                            }
-                        }
-                    }
-                    .listStyle(.plain)
-                }
+            // In-layout like Signals, not a top safeAreaInset — an inset swallows the large title.
+            VStack(spacing: 0) {
+                LiveStatusRow(detail: "\(state.crashes.count.formatted()) captured")
+                crashesList
             }
             .navigationTitle("Crashes")
             .onAppear { core.markCrashesSeen() }
@@ -82,6 +59,37 @@ internal struct CrashesScreen: View {
             } message: {
                 Text("Stacktraces and device info are removed from this device. This can't be undone.")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var crashesList: some View {
+        if state.crashes.isEmpty {
+            EmptyStateView(
+                icon: "checkmark.shield",
+                title: "No crashes",
+                body: "Reports that survive the process land here — exceptions immediately, signal crashes and hangs on the next launch.",
+                actionLabel: nil, action: nil
+            )
+            .frame(maxHeight: .infinity)
+        } else {
+            List {
+                ForEach(groups, id: \.0.id) { meta, crashes in
+                    Section {
+                        ForEach(crashes) { crash in
+                            NavigationLink(value: crash) {
+                                CrashRow(crash: crash)
+                            }
+                        }
+                        .onDelete { offsets in
+                            for offset in offsets { core.deleteCrash(id: crashes[offset].id) }
+                        }
+                    } header: {
+                        sessionHeader(meta)
+                    }
+                }
+            }
+            .listStyle(.plain)
         }
     }
 

@@ -42,6 +42,7 @@ internal struct SignalsScreen: View {
             // Pills live in the layout, not a top safeAreaInset — an inset there swallows the
             // large navigation title.
             VStack(spacing: 0) {
+                LiveStatusRow(detail: "\(audibleHits.count.formatted()) flagged")
                 if categories.count > 1 { categoryPills }
                 signalsList
             }
@@ -67,6 +68,9 @@ internal struct SignalsScreen: View {
                         body: "Known trouble patterns land here the moment they appear in the stream. A healthy run flags nothing — the routine signals ship muted.",
                         actionLabel: nil, action: nil
                     )
+                    // Greedy, so the empty state centers in the space under the Live row
+                    // instead of the whole VStack clustering mid-screen.
+                    .frame(maxHeight: .infinity)
                 } else {
                     List {
                         ForEach(Array(hits.enumerated()), id: \.offset) { _, hit in
