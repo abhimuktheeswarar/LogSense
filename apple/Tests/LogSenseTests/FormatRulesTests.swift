@@ -23,6 +23,23 @@ final class FormatRulesTests: XCTestCase {
         }
     }
 
+    // MARK: capped/rowDisplay — the long-text guardrails
+
+    func testCappedLeavesShortTextAloneAndMarksWhatItCut() {
+        XCTAssertEqual("short", Format.capped("short", at: 100))
+        let capped = Format.capped(String(repeating: "x", count: 150), at: 100)
+        XCTAssertTrue(capped.hasPrefix(String(repeating: "x", count: 100)))
+        XCTAssertTrue(capped.hasSuffix("… (+50 more chars)"), "marker: \(capped.suffix(30))")
+    }
+
+    func testRowDisplayCapsAtTwoThousand() {
+        let huge = String(repeating: "y", count: 50_000)
+        let display = Format.rowDisplay(huge)
+        XCTAssertLessThan(display.count, 2_100)
+        XCTAssertTrue(display.contains("more chars"))
+        XCTAssertEqual("fine", Format.rowDisplay("fine"))
+    }
+
     // MARK: prettyJson — Android's LogLineSheet rules
 
     func testPrettyJsonDetectsAndPrettyPrints() {

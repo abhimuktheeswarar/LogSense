@@ -59,6 +59,8 @@ internal struct LogLineSheet: View {
                     Text(entry.tag)
                         .font(.system(size: 19, weight: .semibold, design: .monospaced))
                         .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
+                        .lineLimit(2)
+                        .truncationMode(.middle)
                         .padding(.top, 10)
                     if !entry.subsystem.isEmpty {
                         Text(entry.subsystem)

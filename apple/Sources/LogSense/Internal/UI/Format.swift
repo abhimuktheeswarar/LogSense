@@ -21,6 +21,21 @@ internal enum Format {
         dayTimeFormatter.string(from: Date(timeIntervalSince1970: Double(ms) / 1000))
     }
 
+    /// A string capped for display or storage, with an honest marker of what was cut. Android
+    /// gets this bound for free from logcat's ~4KB entry cap; iOS stdout capture has no ceiling,
+    /// so the bound has to be ours.
+    static func capped(_ text: String, at limit: Int) -> String {
+        guard text.count > limit else { return text }
+        return text.prefix(limit) + "… (+\(text.count - limit) more chars)"
+    }
+
+    /// What a log ROW renders: capped so one enormous line can't blow row layout — the wrapped
+    /// mode would build a skyscraper row, and the horizontal mode lays text out at full width.
+    /// The line sheet always shows the whole message.
+    static func rowDisplay(_ message: String) -> String {
+        capped(message, at: 2_000)
+    }
+
     /// The message's embedded JSON pretty-printed, with any leading text kept as a prefix line —
     /// or nil when the message holds no parseable JSON (ported from Android's `prettyJson`).
     static func prettyJson(in message: String) -> String? {

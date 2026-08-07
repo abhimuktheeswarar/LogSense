@@ -266,6 +266,9 @@ internal struct LogsScreen: View {
                             }
                             Text(tab.name)
                                 .font(.system(size: 13, weight: isActive || isPaused ? .semibold : .medium))
+                                .lineLimit(1)
+                                .frame(maxWidth: 150)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.horizontal, 13)
                         .padding(.vertical, 6)
@@ -986,11 +989,17 @@ private struct StandardRow: View {
                 }
                 HStack(spacing: 9) {
                     Text(Format.time(entry.timeMs))
-                    Text(entry.tag).foregroundStyle(.secondary)
+                    Text(entry.tag)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                     if let hit {
                         Text(hit.signal.label)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(hit.signal.category.color)
+                            .lineLimit(1)
+                            .frame(maxWidth: 150)
+                            .fixedSize(horizontal: false, vertical: true)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 1.5)
                             .background(hit.signal.category.color.opacity(0.13), in: Capsule())
@@ -1007,9 +1016,9 @@ private struct StandardRow: View {
 
     private var messageText: Text {
         if let highlight {
-            return Text(Format.highlighted(entry.message, matcher: highlight))
+            return Text(Format.highlighted(Format.rowDisplay(entry.message), matcher: highlight))
         }
-        return Text(entry.message)
+        return Text(Format.rowDisplay(entry.message))
     }
 }
 
@@ -1049,9 +1058,9 @@ private struct PadRow: View {
 
     private var messageText: Text {
         if let highlight {
-            return Text(Format.highlighted(entry.message, matcher: highlight))
+            return Text(Format.highlighted(Format.rowDisplay(entry.message), matcher: highlight))
         }
-        return Text(entry.message)
+        return Text(Format.rowDisplay(entry.message))
     }
 }
 
@@ -1182,7 +1191,7 @@ private struct CompactRow: View {
                 .frame(maxWidth: 96, alignment: .leading)
             // Compact never wraps; the toggle picks truncate vs horizontal scroll.
             LineScrollable(wrap: wrap) {
-                Text(entry.message)
+                Text(Format.rowDisplay(entry.message))
                     .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
                     .lineLimit(1)
             }
@@ -1200,7 +1209,7 @@ private struct RawRow: View {
 
     var body: some View {
         LineScrollable(wrap: wrap) {
-            Text("\(Format.time(entry.timeMs)) \(String(entry.level.letter)) \(entry.tag): \(entry.message)")
+            Text("\(Format.time(entry.timeMs)) \(String(entry.level.letter)) \(entry.tag): \(Format.rowDisplay(entry.message))")
                 .font(.system(size: 11.5, design: .monospaced))
                 .lineLimit(wrap ? nil : 1)
         }

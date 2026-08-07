@@ -284,8 +284,11 @@ internal final class LogSenseCore {
     private func ingestStdout(_ lines: [String]) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let entries = lines.map { line in
+            // Unified-log entries are ~1KB-capped by the platform; stdout has no ceiling, and the
+            // buffer counts lines, not bytes — one colossal print() must not own the heap.
             LogEntry(id: 0, timeMs: now, pid: getpid(), tid: 0,
-                     level: .debug, subsystem: "", tag: "print", message: line)
+                     level: .debug, subsystem: "", tag: "print",
+                     message: Format.capped(line, at: 16_384))
         }
         onBatch(buffer.append(entries))
         // No publish here — the poll tick publishes, keeping one cadence for everything.
