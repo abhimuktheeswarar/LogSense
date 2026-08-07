@@ -2,6 +2,10 @@
 .gradle/
 build/
 
+# Swift Package Manager
+.build/
+.swiftpm/
+
 # Android / IDE
 .idea/
 *.iml
