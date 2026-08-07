@@ -4,7 +4,7 @@ import SwiftUI
 internal extension SignalCategory {
     var color: Color {
         switch self {
-        case .crash: return Color(hex: 0xFF453A)
+        case .fault: return Color(hex: 0xFF453A)
         case .hang, .memory: return Color(hex: 0xFF9F0A)
         case .custom: return Color(hex: 0x0A84FF)
         case .ui, .network: return Color(hex: 0x64D2FF)
@@ -23,6 +23,25 @@ internal struct LogLineSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var scheme
 
+    /// Android's tested rule: the Pretty/Raw toggle appears only when the message holds parseable
+    /// JSON, and Pretty is preselected when it does.
+    private let pretty: String?
+    @State private var showPretty: Bool
+
+    init(entry: LogEntry, hit: SignalHit?, onFilterTag: @escaping (String) -> Void) {
+        self.entry = entry
+        self.hit = hit
+        self.onFilterTag = onFilterTag
+        let pretty = Format.prettyJson(in: entry.message)
+        self.pretty = pretty
+        _showPretty = State(initialValue: pretty != nil)
+    }
+
+    /// Copy and Share send whatever is currently displayed, pretty or raw.
+    private var displayedBody: String {
+        showPretty ? (pretty ?? entry.message) : entry.message
+    }
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -38,7 +57,8 @@ internal struct LogLineSheet: View {
                             .foregroundStyle(.secondary)
                     }
                     Text(entry.tag)
-                        .font(.system(size: 19, weight: .semibold))
+                        .font(.system(size: 19, weight: .semibold, design: .monospaced))
+                        .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
                         .padding(.top, 10)
                     if !entry.subsystem.isEmpty {
                         Text(entry.subsystem)
@@ -63,7 +83,15 @@ internal struct LogLineSheet: View {
                         .padding(.top, 12)
                     }
 
-                    Text(entry.message)
+                    if pretty != nil {
+                        HStack(spacing: 8) {
+                            selectPill("Pretty", isOn: showPretty) { showPretty = true }
+                            selectPill("Raw", isOn: !showPretty) { showPretty = false }
+                        }
+                        .padding(.top, 12)
+                    }
+
+                    Text(displayedBody)
                         .font(.system(size: 12.5, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -73,7 +101,7 @@ internal struct LogLineSheet: View {
 
                     HStack(spacing: 10) {
                         actionButton("Copy line") {
-                            UIPasteboard.general.string = entry.message
+                            UIPasteboard.general.string = displayedBody
                         }
                         actionButton("Filter this tag") {
                             onFilterTag(entry.tag)
@@ -91,13 +119,25 @@ internal struct LogLineSheet: View {
                     Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    ShareLink(item: "\(Format.time(entry.timeMs)) \(entry.level.letter) \(entry.tag): \(entry.message)") {
+                    ShareLink(item: displayedBody) {
                         Image(systemName: "square.and.arrow.up")
                     }
                 }
             }
         }
         .presentationDetents([.medium, .large])
+    }
+
+    private func selectPill(_ label: String, isOn: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(label)
+                .font(.system(size: 13, weight: isOn ? .semibold : .medium))
+                .padding(.horizontal, 13)
+                .padding(.vertical, 6)
+                .background(isOn ? Color.accentColor : Color(.tertiarySystemFill), in: Capsule())
+                .foregroundStyle(isOn ? .white : .primary)
+        }
+        .buttonStyle(.plain)
     }
 
     private func actionButton(_ label: String, action: @escaping () -> Void) -> some View {

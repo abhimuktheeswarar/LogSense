@@ -6,11 +6,15 @@ internal enum SignalCategory: Int, CaseIterable {
     // last, so a list of categories never buries ours among theirs. `severity` is deliberately
     // separate from it: a custom signal is something the host chose to watch for, so it outranks a
     // lifecycle note when deciding the colour of a count badge.
-    case crash, hang, memory, ui, network, data, resource, lifecycle, custom
+    //
+    // Deliberately no "Crash" category: a fault-severity line is a FAULT — the process kept
+    // running. Actual crashes are reports and live on the Crashes tab; naming a signal category
+    // "Crash" promised something this tab can't show.
+    case fault, hang, memory, ui, network, data, resource, lifecycle, custom
 
     var label: String {
         switch self {
-        case .crash: return "Crash"
+        case .fault: return "Fault"
         case .hang: return "Hang"
         case .memory: return "Memory"
         case .ui: return "UI"
@@ -24,7 +28,7 @@ internal enum SignalCategory: Int, CaseIterable {
 
     var severity: Int {
         switch self {
-        case .crash: return 0
+        case .fault: return 0
         case .hang: return 1
         case .memory: return 2
         case .custom: return 3
@@ -119,7 +123,7 @@ internal enum BuiltInSignals {
                query: #"msg:"Can't end BackgroundTask""#),
 
         // ---- crash (generic catch-all, after everything more specific) ---------------------
-        Signal(id: "crash.fault", label: "Fault logged", category: .crash, query: "level:F"),
+        Signal(id: "crash.fault", label: "Fault logged", category: .fault, query: "level:F"),
 
         // ---- reported by the platform, no pattern ------------------------------------------
         memoryWarning,

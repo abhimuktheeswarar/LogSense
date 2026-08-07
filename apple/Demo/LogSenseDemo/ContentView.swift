@@ -33,6 +33,8 @@ struct ContentView: View {
 
     private let logger = Logger(subsystem: "com.msabhi.logsense.demo", category: "Demo")
     private let analytics = Logger(subsystem: "com.msabhi.logsense.demo", category: "Analytics")
+    private let telemetry = Logger(subsystem: "com.msabhi.logsense.demo", category: "Telemetry")
+    private let metrics = Logger(subsystem: "com.msabhi.logsense.demo", category: "Metrics")
     @State private var burstTask: Task<Void, Never>?
 
     var body: some View {
@@ -83,6 +85,13 @@ struct ContentView: View {
                     }
                     Button("Arrow + Swift dict shape") {
                         analytics.info(#"logEvent = seat_selected -> ["seat": "L4", "fare": 849]"#)
+                    }
+                    Button("Telemetry tag (regex-matched)") {
+                        telemetry.info("logEvent = checkout_started -> {cart=3, total=1499}")
+                        telemetry.info("this line does not match the regex and is skipped")
+                    }
+                    Button("Metrics tag") {
+                        metrics.info("screen_render screen=Home, ms=182")
                     }
                 }
 

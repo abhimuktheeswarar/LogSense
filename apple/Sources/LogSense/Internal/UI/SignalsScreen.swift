@@ -9,6 +9,8 @@ internal struct SignalsScreen: View {
     let onDone: (() -> Void)?
     @ObservedObject private var state: LogSenseState
     @State private var categoryScope: SignalCategory?
+    /// Muting hides existing hits too, like Android — everywhere, not just future matching.
+    @State private var muted = Prefs.mutedSignals()
 
     init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
@@ -16,16 +18,20 @@ internal struct SignalsScreen: View {
         self.state = core.state
     }
 
+    private var audibleHits: [SignalHit] {
+        state.signalHits.filter { !muted.contains($0.signal.id) }
+    }
+
     /// Newest first, like Crashes and Events.
     private var hits: [SignalHit] {
-        let all = state.signalHits.reversed()
+        let all = audibleHits.reversed()
         guard let categoryScope else { return Array(all) }
         return all.filter { $0.signal.category == categoryScope }
     }
 
     private var categories: [(SignalCategory, Int)] {
         var counts: [SignalCategory: Int] = [:]
-        for hit in state.signalHits { counts[hit.signal.category, default: 0] += 1 }
+        for hit in audibleHits { counts[hit.signal.category, default: 0] += 1 }
         return SignalCategory.allCases.compactMap { category in
             counts[category].map { (category, $0) }
         }
@@ -33,7 +39,27 @@ internal struct SignalsScreen: View {
 
     var body: some View {
         NavigationStack {
-            Group {
+            // Pills live in the layout, not a top safeAreaInset — an inset there swallows the
+            // large navigation title.
+            VStack(spacing: 0) {
+                if categories.count > 1 { categoryPills }
+                signalsList
+            }
+            .onAppear { muted = Prefs.mutedSignals() }
+            .navigationTitle("Signals")
+            .toolbar {
+                if let onDone {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BackButton(label: core.hostName, action: onDone)
+                    }
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var signalsList: some View {
+        Group {
                 if state.signalHits.isEmpty {
                     EmptyStateView(
                         icon: "waveform.path.ecg",
@@ -54,7 +80,6 @@ internal struct SignalsScreen: View {
                                 }
                                 .swipeActions {
                                     Button {
-                                        var muted = Prefs.mutedSignals()
                                         muted.insert(hit.signal.id)
                                         Prefs.setMutedSignals(muted)
                                     } label: {
@@ -66,18 +91,6 @@ internal struct SignalsScreen: View {
                     }
                     .listStyle(.plain)
                 }
-            }
-            .navigationTitle("Signals")
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if categories.count > 1 { categoryPills }
-            }
-            .toolbar {
-                if let onDone {
-                    ToolbarItem(placement: .topBarLeading) {
-                        BackButton(label: core.hostName, action: onDone)
-                    }
-                }
-            }
         }
     }
 

@@ -87,7 +87,9 @@ internal struct LogsScreen: View {
     private var matchIds: [Int64] {
         guard findActive, findQuery.isActive else { return [] }
         let m = matcher
-        return displayed.filter { m.matches($0.message) || m.matches($0.tag) }.map(\.id)
+        // Android's tested rule: match against "tag message" joined by one space — per entry,
+        // not per occurrence.
+        return displayed.filter { m.matches("\($0.tag) \($0.message)") }.map(\.id)
     }
 
     /// Regular width shows the line inspector beside the stream; compact presents a sheet.
@@ -100,10 +102,12 @@ internal struct LogsScreen: View {
         )
     }
 
-    /// Hits keyed by the line they matched, for the gutter/pill on rows.
+    /// Hits keyed by the line they matched, for the gutter/pill on rows. Muted signals are
+    /// dropped here too, like Android — a mute hides pills and stripes, not just tab rows.
     private var hitsByEntryId: [Int64: SignalHit] {
+        let muted = Prefs.mutedSignals()
         var out: [Int64: SignalHit] = [:]
-        for hit in state.signalHits {
+        for hit in state.signalHits where !muted.contains(hit.signal.id) {
             if let id = hit.entryId { out[id] = hit }
         }
         return out
@@ -337,7 +341,10 @@ internal struct LogsScreen: View {
                 Text("Frozen — this tab is paused")
                     .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(Color(hex: 0xFF9F0A))
-                Text("+\(buffered.formatted()) buffered · other tabs keep recording")
+                // Android shows the buffered count only once there is one.
+                Text(buffered > 0
+                    ? "+\(buffered.formatted()) buffered · other tabs keep recording"
+                    : "Other tabs keep recording")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -621,7 +628,7 @@ internal struct LogsScreen: View {
                                 .onTapGesture { selectedEntry = entry }
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                                 .listRowSeparator(viewMode == .standard ? .visible : .hidden)
-                                .listRowBackground(rowBackground(entry, matches: matches))
+                                .listRowBackground(rowBackground(entry, matches: matches, hit: hits[entry.id]))
                         }
                         // Fixed-size sentinel: scrolling to the last real row is unreliable when
                         // rows wrap to variable heights — the sentinel always lands at the bottom.
@@ -699,12 +706,23 @@ internal struct LogsScreen: View {
         }
     }
 
-    private func rowBackground(_ entry: LogEntry, matches: [Int64]) -> Color {
+    /// Android's tested precedence: selection/find first, then signal tint (which wins over
+    /// fault/error), then fault, then error.
+    private func rowBackground(_ entry: LogEntry, matches: [Int64], hit: SignalHit?) -> Color {
         if isRegular, selectedEntry?.id == entry.id {
             return Color.accentColor.opacity(0.12)
         }
         if findActive, matches.indices.contains(findIndex), matches[findIndex] == entry.id {
             return Color.accentColor.opacity(0.12)
+        }
+        if let hit {
+            return hit.signal.category.color.opacity(0.10)
+        }
+        if entry.level == .fault {
+            return entry.level.color(scheme).opacity(0.09)
+        }
+        if entry.level == .error {
+            return entry.level.color(scheme).opacity(0.08)
         }
         return .clear
     }
@@ -731,7 +749,7 @@ internal struct LogsScreen: View {
             case .standard:
                 StandardRow(entry: entry, wrap: wrap, highlight: findActive ? matcher : nil, hit: hit)
             case .compact:
-                CompactRow(entry: entry)
+                CompactRow(entry: entry, wrap: wrap)
             case .raw:
                 RawRow(entry: entry, wrap: wrap)
             }
@@ -756,8 +774,8 @@ internal struct LogsScreen: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .onChange(of: findQuery.text) { _ in findIndex = 0 }
-                    Text(matches.isEmpty ? "0" : "\(findIndex + 1) of \(matches.count)")
-                        .font(.system(size: 12, weight: .medium))
+                    Text("\(matches.isEmpty ? 0 : findIndex + 1)/\(matches.count)")
+                        .font(.system(size: 12, weight: .medium, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .layoutPriority(1)
                 }
@@ -810,11 +828,13 @@ internal struct LogsScreen: View {
         findIndex = ((findIndex + delta) % matches.count + matches.count) % matches.count
     }
 
+    /// Android's exact shared-line format: `HH:mm:ss.SSS pid-tid L tag: message`, every line
+    /// newline-terminated including the last.
     private func shareText(_ rows: [LogEntry]) -> String {
         rows.map { entry in
-            "\(Format.time(entry.timeMs)) \(entry.level.letter) \(entry.tag): \(entry.message)"
+            "\(Format.time(entry.timeMs)) \(entry.pid)-\(entry.tid) \(entry.level.letter) \(entry.tag): \(entry.message)\n"
         }
-        .joined(separator: "\n")
+        .joined()
     }
 }
 
@@ -925,6 +945,23 @@ private struct TabFormSheet: View {
 
 // MARK: - rows
 
+/// Android's LINE scroll mode: with wrap off, the message scrolls horizontally on its own —
+/// the gutter, chip and metadata stay put.
+private struct LineScrollable<Content: View>: View {
+    let wrap: Bool
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        if wrap {
+            content
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                content.fixedSize(horizontal: true, vertical: false)
+            }
+        }
+    }
+}
+
 private struct StandardRow: View {
     let entry: LogEntry
     let wrap: Bool
@@ -940,9 +977,13 @@ private struct StandardRow: View {
                 .frame(width: 21, height: 21)
                 .background(entry.level.chipFill(scheme), in: RoundedRectangle(cornerRadius: 6.5))
             VStack(alignment: .leading, spacing: 3) {
-                messageText
-                    .font(.system(size: 12.5, design: .monospaced))
-                    .lineLimit(wrap ? nil : 1)
+                LineScrollable(wrap: wrap) {
+                    messageText
+                        .font(.system(size: 12.5, design: .monospaced))
+                        // Android's tested rule: error and fault messages read in their level color.
+                        .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
+                        .lineLimit(wrap ? nil : 1)
+                }
                 HStack(spacing: 9) {
                     Text(Format.time(entry.timeMs))
                     Text(entry.tag).foregroundStyle(.secondary)
@@ -994,10 +1035,13 @@ private struct PadRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(width: 92, alignment: .leading)
-            messageText
-                .font(.system(size: 12.5, design: .monospaced))
-                .lineLimit(wrap ? nil : 1)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            LineScrollable(wrap: wrap) {
+                messageText
+                    .font(.system(size: 12.5, design: .monospaced))
+                    .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
+                    .lineLimit(wrap ? nil : 1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -1122,6 +1166,7 @@ private struct LineInspector: View {
 
 private struct CompactRow: View {
     let entry: LogEntry
+    let wrap: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -1135,8 +1180,12 @@ private struct CompactRow: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
                 .frame(maxWidth: 96, alignment: .leading)
-            Text(entry.message)
-                .lineLimit(1)
+            // Compact never wraps; the toggle picks truncate vs horizontal scroll.
+            LineScrollable(wrap: wrap) {
+                Text(entry.message)
+                    .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
+                    .lineLimit(1)
+            }
             Spacer(minLength: 0)
         }
         .font(.system(size: 11.5, design: .monospaced))
@@ -1150,12 +1199,14 @@ private struct RawRow: View {
     let wrap: Bool
 
     var body: some View {
-        Text("\(Format.time(entry.timeMs)) \(String(entry.level.letter)) \(entry.tag): \(entry.message)")
-            .font(.system(size: 11.5, design: .monospaced))
-            .lineLimit(wrap ? nil : 1)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 3)
+        LineScrollable(wrap: wrap) {
+            Text("\(Format.time(entry.timeMs)) \(String(entry.level.letter)) \(entry.tag): \(entry.message)")
+                .font(.system(size: 11.5, design: .monospaced))
+                .lineLimit(wrap ? nil : 1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 3)
     }
 }
 
