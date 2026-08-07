@@ -24,6 +24,8 @@ internal final class LogSenseState: ObservableObject {
     @Published var crashes: [StoredCrash] = []
     /// Signal hits, oldest first, in-memory — they die with the buffer they point into.
     @Published var signalHits: [SignalHit] = []
+    /// Stored analytics events, newest first, across sessions.
+    @Published var events: [StoredEvent] = []
 }
 
 /// The process singleton every part of LogSense hangs off. No DI framework — this is passed down
@@ -44,6 +46,7 @@ internal final class LogSenseCore {
     private let logReader = LogReader()
     private let stdoutReader = StdoutReader()
     private(set) var signals: SignalDetector!
+    private var analytics: AnalyticsDetector!
     #if os(iOS)
     private var metricKit: MetricKitCollector?
     private var lifecycle: LifecycleSignals?
@@ -92,6 +95,7 @@ internal final class LogSenseCore {
     }
 
     private func startCapture() {
+        analytics = AnalyticsDetector(config: config)
         signals = SignalDetector(config: config, muted: { Prefs.mutedSignals() })
         signals.onChange = { [weak self] hits in
             Task { @MainActor [weak self] in self?.state.signalHits = hits }
@@ -142,11 +146,34 @@ internal final class LogSenseCore {
             guard let self, let store = self.sessionStore else { return }
             let ingested = store.ingestPendingCrashes()
             let all = store.loadCrashes()
-            Task { @MainActor [state = self.state] in state.crashes = all }
+            let events = store.loadEvents()
+            Task { @MainActor [state = self.state] in
+                state.crashes = all
+                // Live-appended events may already be on screen; keep them ahead of the reload.
+                state.events = state.events + events.filter { loaded in
+                    !state.events.contains(where: { $0.id == loaded.id })
+                }
+            }
             if let newest = ingested.first ?? all.first, !ingested.isEmpty {
                 self.postCrashNotification(newest.record)
             }
         }
+    }
+
+    func deleteEvent(_ event: StoredEvent) {
+        sessionStore?.deleteEvent(event)
+        refreshEvents()
+    }
+
+    func deleteAllEvents() {
+        sessionStore?.deleteAllEvents()
+        refreshEvents()
+    }
+
+    private func refreshEvents() {
+        guard let store = sessionStore else { return }
+        let events = store.loadEvents()
+        Task { @MainActor [state] in state.events = events }
     }
 
     private func storeCrash(_ record: CrashRecord, notify: Bool) {
@@ -217,6 +244,16 @@ internal final class LogSenseCore {
     /// once per line rather than per view render.
     private func onBatch(_ batch: [LogEntry]) {
         signals?.process(batch)
+        if let analytics, let store = sessionStore {
+            let extracted = analytics.process(batch)
+            if !extracted.isEmpty {
+                let stored = store.appendEvents(extracted, maxPerSession: max(0, config.maxStoredEvents))
+                Task { @MainActor [state] in
+                    // Batch entries arrive oldest-first; the published list stays newest-first.
+                    state.events.insert(contentsOf: stored.reversed(), at: 0)
+                }
+            }
+        }
     }
 
     private func publishIfNeeded() {

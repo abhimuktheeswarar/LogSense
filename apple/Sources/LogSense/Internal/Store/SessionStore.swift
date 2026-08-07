@@ -7,6 +7,13 @@ internal struct StoredCrash: Identifiable, Equatable {
     var record: CrashRecord
 }
 
+/// One stored analytics event with the session it belongs to.
+internal struct StoredEvent: Identifiable, Equatable {
+    let sessionId: String
+    let record: EventRecord
+    var id: String { record.id }
+}
+
 /// Persistence for sessions and crash reports — plain JSON files, no database. The volumes
 /// (≤ maxSessions dirs, ≤ maxStoredCrashes small files) don't justify SQLite.
 ///
@@ -130,6 +137,93 @@ internal final class SessionStore {
 
     func deleteAll() {
         for crash in loadCrashes() { delete(id: crash.id) }
+    }
+
+    // MARK: - events
+
+    /// Events append to one `events.jsonl` per session — one JSON object per line, append-only on
+    /// the hot path; the per-session cap trims by rewrite only when actually exceeded.
+    private let eventLock = NSLock()
+    private var currentEventCount = -1 // lazily counted on first append
+
+    func appendEvents(_ records: [EventRecord], maxPerSession: Int) -> [StoredEvent] {
+        guard !records.isEmpty else { return [] }
+        eventLock.lock(); defer { eventLock.unlock() }
+        let url = eventsFile(forSession: currentSessionId)
+        if currentEventCount < 0 {
+            currentEventCount = readEvents(at: url).count
+        }
+        let encoder = JSONEncoder()
+        var data = Data()
+        for record in records {
+            guard let line = try? encoder.encode(record) else { continue }
+            data.append(line)
+            data.append(0x0A)
+        }
+        if let handle = FileHandle(forWritingAtPath: url.path) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: url)
+        }
+        currentEventCount += records.count
+        if currentEventCount > maxPerSession {
+            // A chatty current run never evicts previous sessions' events — trim only its own file.
+            let kept = readEvents(at: url).suffix(maxPerSession)
+            writeEvents(Array(kept), to: url)
+            currentEventCount = kept.count
+        }
+        return records.map { StoredEvent(sessionId: currentSessionId, record: $0) }
+    }
+
+    /// Every stored event, newest first.
+    func loadEvents() -> [StoredEvent] {
+        eventLock.lock(); defer { eventLock.unlock() }
+        var out: [StoredEvent] = []
+        for sessionId in sessionIds() {
+            for record in readEvents(at: eventsFile(forSession: sessionId)) {
+                out.append(StoredEvent(sessionId: sessionId, record: record))
+            }
+        }
+        return out.sorted { $0.record.timestamp > $1.record.timestamp }
+    }
+
+    func deleteEvent(_ event: StoredEvent) {
+        eventLock.lock(); defer { eventLock.unlock() }
+        let url = eventsFile(forSession: event.sessionId)
+        let kept = readEvents(at: url).filter { $0.id != event.record.id }
+        writeEvents(kept, to: url)
+        if event.sessionId == currentSessionId { currentEventCount = kept.count }
+    }
+
+    func deleteAllEvents() {
+        eventLock.lock(); defer { eventLock.unlock() }
+        for sessionId in sessionIds() {
+            try? fm.removeItem(at: eventsFile(forSession: sessionId))
+        }
+        currentEventCount = 0
+    }
+
+    private func eventsFile(forSession id: String) -> URL {
+        dir(forSession: id).appendingPathComponent("events.jsonl")
+    }
+
+    private func readEvents(at url: URL) -> [EventRecord] {
+        guard let data = try? Data(contentsOf: url) else { return [] }
+        let decoder = JSONDecoder()
+        return data.split(separator: 0x0A).compactMap { try? decoder.decode(EventRecord.self, from: $0) }
+    }
+
+    private func writeEvents(_ records: [EventRecord], to url: URL) {
+        let encoder = JSONEncoder()
+        var data = Data()
+        for record in records {
+            guard let line = try? encoder.encode(record) else { continue }
+            data.append(line)
+            data.append(0x0A)
+        }
+        try? data.write(to: url)
     }
 
     // MARK: - retention
