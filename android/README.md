@@ -73,14 +73,30 @@ dependencies {
 }
 ```
 
+Then initialize from your `Application` subclass — the class registered as `android:name` on
+`<application>` in `AndroidManifest.xml` — in `onCreate()`, right after `super.onCreate()` and
+before your crash reporter configures (LogSense chains to whatever handler is installed, so
+either order works; first never surprises anyone):
+
 ```kotlin
-// Application class
+// MyApp.kt — the android:name class from the manifest.
 class MyApp : Application() {
     override fun onCreate() {
         super.onCreate()
-        // Capture the "Analytics" tag; null = parse it with the built-in parser. Give a tag a regex
-        // (with (?<name>…) / optional (?<params>…) groups) instead of null for SDKs the parser can't infer.
-        LogSense.init(this, LogSenseConfig(analyticsTagPatterns = mapOf("Analytics" to null)))
+        LogSense.init(
+            this,
+            LogSenseConfig(
+                analyticsTagPatterns = mapOf(
+                    // null = the built-in parser handles this tag's lines
+                    // (name {json}, name Bundle[{k=v}], name k=v, k2=v2).
+                    "Analytics" to null,
+                    // A regex captures only matching lines — for SDKs the parser can't infer.
+                    // Named groups: (?<name>…) required, (?<params>…) optional. This example
+                    // matches lines like `event=purchase payload={"sku":"pro","qty":2}`.
+                    "CRM" to """event=(?<name>\w+)\s+payload=(?<params>\{.*\})""",
+                ),
+            ),
+        )
     }
 }
 ```
@@ -104,6 +120,7 @@ LogSense.init(
         retentionDays = 7,               // stored events/crashes older than this are trimmed
         maxStoredEvents = 1_000,
         maxStoredCrashes = 50,
+        maxSessions = 10,                // recent runs whose events/crashes are kept; older pruned
         showNotification = true,         // dismissable "recording" notification
         theme = ThemeMode.SYSTEM,        // or force LIGHT / DARK
         accentColor = null,              // ARGB int used as the Material primary color
