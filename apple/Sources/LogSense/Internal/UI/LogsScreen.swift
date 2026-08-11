@@ -1122,27 +1122,32 @@ private struct PadRow: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 11) {
-            Text(Format.time(entry.timeMs))
-                .font(.system(size: 11.5, design: .monospaced))
-                .foregroundStyle(.tertiary)
-            Text(String(entry.level.letter))
-                .font(.system(size: 10.5, weight: .bold, design: .monospaced))
-                .foregroundStyle(entry.level.color(scheme))
-                .frame(width: 19, height: 19)
-                .background(entry.level.chipFill(scheme), in: RoundedRectangle(cornerRadius: 6))
-            Text(entry.tag)
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
-                .lineLimit(1)
-                .frame(width: 92, alignment: .leading)
-            LineScrollable(wrap: wrap) {
+        // With wrap off the WHOLE line scrolls (Android's ENTRY reading, not LINE): pinning
+        // time+tag would leave the message a sliver of the viewport, and the fixed tag column
+        // would stay truncated no matter how far you scroll. Wrapped keeps the tabular layout —
+        // fixed 92pt tag column so the message column aligns across rows.
+        LineScrollable(wrap: wrap) {
+            HStack(alignment: .firstTextBaseline, spacing: 11) {
+                Text(Format.time(entry.timeMs))
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .foregroundStyle(.tertiary)
+                Text(String(entry.level.letter))
+                    .font(.system(size: 10.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(entry.level.color(scheme))
+                    .frame(width: 19, height: 19)
+                    .background(entry.level.chipFill(scheme), in: RoundedRectangle(cornerRadius: 6))
+                Text(entry.tag)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
+                    .lineLimit(1)
+                    .frame(minWidth: 92, alignment: .leading)
+                    .frame(width: wrap ? 92 : nil, alignment: .leading)
                 messageText
                     .font(.system(size: 12.5, design: .monospaced))
                     .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
                     .lineLimit(wrap ? nil : 1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
