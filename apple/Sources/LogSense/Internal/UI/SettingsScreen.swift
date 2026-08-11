@@ -19,6 +19,22 @@ internal struct SettingsScreen: View {
     @State private var newTag = ""
     @State private var newTagPattern = ""
 
+    /// The rows QA reads are event tags, not storage keys. When a dispatcher pattern splits
+    /// one log tag into per-source tags via `(?<tag>…)`, the key (the app binary's name) is
+    /// plumbing — list the declared tags in pattern order instead, matching Android, where
+    /// the config keys ARE the tags. A key whose patterns declare nothing lists as itself.
+    private var predefinedTagRows: [String] {
+        var out: [String] = []
+        var seen = Set<String>()
+        for key in core.config.analyticsTagPatterns.keys.sorted() {
+            let declared = declaredEventTags(core.config.analyticsTagPatterns[key] ?? nil)
+            for tag in declared.isEmpty ? [key] : declared where seen.insert(tag).inserted {
+                out.append(tag)
+            }
+        }
+        return out
+    }
+
     var body: some View {
             List {
                 Section {
@@ -53,28 +69,27 @@ internal struct SettingsScreen: View {
 
                 if #available(iOS 16.2, *) {
                     Section {
-                        Toggle("Show while recording", isOn: liveActivityBinding)
+                        // The activity only exists when the host ships the widget-extension
+                        // integration and opts in via config — without that, a live toggle
+                        // promises something that can never appear.
+                        Toggle("Show while recording",
+                               isOn: core.config.showLiveActivity ? liveActivityBinding : .constant(false))
+                            .disabled(!core.config.showLiveActivity)
                     } header: {
                         Text("Live Activity")
                     } footer: {
-                        Text("Dynamic Island and Lock Screen presence while capture runs; red on a crash. Off, capture continues silently.")
+                        Text(core.config.showLiveActivity
+                             ? "Dynamic Island and Lock Screen presence while capture runs; red on a crash. Off, capture continues silently."
+                             : "Not available: the host app hasn't enabled the Live Activity (widget-extension integration plus showLiveActivity in LogSenseConfig).")
                     }
                 }
 
                 Section {
-                    ForEach(core.config.analyticsTagPatterns.keys.sorted(), id: \.self) { tag in
+                    ForEach(predefinedTagRows, id: \.self) { tag in
                         LabeledContent {
                             Text("Predefined").font(.footnote)
                         } label: {
                             Text(tag).font(.system(size: 15, design: .monospaced))
-                            // A dispatcher pattern splits one log tag into per-source event
-                            // tags — those are what the Events screen shows, so list them.
-                            let split = declaredEventTags(core.config.analyticsTagPatterns[tag] ?? nil)
-                            if !split.isEmpty {
-                                Text(split.joined(separator: " · "))
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-                            }
                         }
                     }
                     ForEach(qaTags.keys.sorted(), id: \.self) { tag in
