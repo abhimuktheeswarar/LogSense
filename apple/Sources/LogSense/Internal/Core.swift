@@ -157,13 +157,18 @@ internal final class LogSenseCore {
         #endif
         startCrashPipeline()
         pollTask = Task.detached(priority: .utility) { [weak self] in
+            // Opening the store and building its enumerator costs real time (~1s observed on
+            // the simulator) regardless of how many lines are new, so cadence is the only
+            // lever: back off while the host is quiet, snap back the moment lines arrive,
+            // and never sleep less than twice what the poll itself cost.
+            var quietPolls = 0
             while !Task.isCancelled {
                 let started = DispatchTime.now().uptimeNanoseconds
-                self?.pollOnce()
+                let sawLines = self?.pollOnce() ?? false
                 let elapsed = DispatchTime.now().uptimeNanoseconds - started
-                // A poll that got expensive (huge archive, translated binary) must not own a
-                // core: sleep at least twice what the poll cost, capped so tailing stays live.
-                let backoff = min(max(LogSenseCore.pollIntervalNs, elapsed * 2), 5_000_000_000)
+                quietPolls = sawLines ? 0 : quietPolls + 1
+                let idleStretch = LogSenseCore.pollIntervalNs * UInt64(min(5, 1 + quietPolls))
+                let backoff = min(max(idleStretch, elapsed * 2), 5_000_000_000)
                 try? await Task.sleep(nanoseconds: backoff)
             }
         }
@@ -293,7 +298,8 @@ internal final class LogSenseCore {
         }
     }
 
-    private func pollOnce() {
+    @discardableResult
+    private func pollOnce() -> Bool {
         let batch = logReader.poll()
         if !batch.isEmpty {
             onBatch(buffer.append(batch))
@@ -302,6 +308,7 @@ internal final class LogSenseCore {
         #if os(iOS)
         syncLiveActivity()
         #endif
+        return !batch.isEmpty
     }
 
     private func ingestStdout(_ lines: [String]) {
