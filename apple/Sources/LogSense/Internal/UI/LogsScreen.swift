@@ -134,6 +134,7 @@ internal struct LogsScreen: View {
                 header(rows: rows)
                 tabsRow
                 filterBand
+                if DebuggerState.isAttached { debuggerBanner.padding(.top, 8) }
                 if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                 if state.status == .paused { pausedBanner.padding(.top, 8) }
                 content(rows: rows, matches: matches)
@@ -605,6 +606,29 @@ internal struct LogsScreen: View {
 
     // MARK: banners & states
 
+    /// A debugger diverts the process's unified-log stream to its own console — the store
+    /// (and therefore this screen) misses those lines. Say so; a quiet stream here otherwise
+    /// reads as LogSense being broken.
+    private var debuggerBanner: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "ant").foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Debugger attached")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text("The system sends this app's log lines to the debugger console instead of the log store. Launch from the app icon for full capture.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.blue.opacity(0.3), lineWidth: 0.5))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+    }
+
     private var pausedBanner: some View {
         HStack(spacing: 10) {
             Image(systemName: "pause.fill").foregroundStyle(.orange)
@@ -638,12 +662,18 @@ internal struct LogsScreen: View {
     @ViewBuilder
     private func emptyState(rows: [LogEntry]) -> some View {
         if state.status == .waiting {
-            EmptyStateView(
-                icon: "list.bullet.rectangle",
-                title: "Waiting for the first line",
-                body: "Attached to the log stream. Use \(core.hostName) and its output appears here, newest at the bottom.",
-                actionLabel: nil, action: nil
-            )
+            // A spinner, not an empty state: the first walk of the log store takes seconds in
+            // a chatty host, and "no data" during that window reads as broken.
+            VStack(spacing: 14) {
+                ProgressView()
+                Text("Loading the log stream…")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("The first pass over the process's log history can take a few seconds.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: 280)
+            }
         } else if isFiltering {
             EmptyStateView(
                 icon: "line.3.horizontal.decrease",

@@ -175,7 +175,15 @@ internal final class LogSenseCore {
                 // difference between a visible burden and background noise.
                 let duty: UInt64 = self?.uiVisible == true ? 2 : 4
                 let backoff = min(max(idleStretch, elapsed * duty), 5_000_000_000)
-                try? await Task.sleep(nanoseconds: backoff)
+                // Sliced so opening the UI can cut a long sleep short — the screen should
+                // fill now, not when the lazy cadence happens to come around.
+                var remaining = backoff
+                while remaining > 0, !Task.isCancelled, self?.pollWakeRequested != true {
+                    let slice = min(remaining, 250_000_000)
+                    try? await Task.sleep(nanoseconds: slice)
+                    remaining -= slice
+                }
+                self?.pollWakeRequested = false
             }
         }
     }
@@ -467,11 +475,16 @@ internal final class LogSenseCore {
     /// the host. Benign race (poll thread reads, main sets): worth at most one skipped
     /// publish, corrected on the next poll or on `setUIVisible(true)`'s catch-up.
     private var uiVisible = false
+    /// Set to cut the poll loop's sleep short; same benign-race contract as `uiVisible`.
+    private var pollWakeRequested = false
 
     @MainActor
     func setUIVisible(_ visible: Bool) {
         uiVisible = visible
-        if visible { state.uiEpoch += 1 }
+        if visible {
+            state.uiEpoch += 1
+            pollWakeRequested = true
+        }
         guard visible, !paused else { return }
         // Catch up immediately — the next poll may be seconds away on the stretched cadence.
         state.snapshot = buffer.currentSnapshot()
