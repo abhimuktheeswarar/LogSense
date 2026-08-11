@@ -135,6 +135,16 @@ final class DefaultExtractorTests: XCTestCase {
         XCTAssertEqual(["page": "home", "userType": "RETURNING"], params)
     }
 
+    func testPlistDictValueHoldingEscapedJsonIsUnwrapped() {
+        // An SDK cramming a whole attribute set through one string: the plist prints it as
+        // `params = "{\n  \"+key\" : false\n}";` — those pairs should become their own rows.
+        let payload = "{\n    params = \"{\\n  \\\"+clicked_link\\\" : false,\\n  \\\"+first_session\\\" : true\\n}\";\n}"
+        let params = parseParams(payload)
+        XCTAssertEqual("false", params["+clicked_link"])
+        XCTAssertEqual("true", params["+first_session"])
+        XCTAssertNil(params["params"], "the wrapper key dissolves into its contents")
+    }
+
     func testConfiguredRegexWithPlistPayloadEndToEnd() {
         // The whole path a host configures: tag regex with name/params groups over a dispatch
         // mirror line, params in plist-dict form, no closing brace required.

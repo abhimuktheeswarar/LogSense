@@ -138,11 +138,29 @@ private let plistPairPattern = try! NSRegularExpression(
 /// line-bound makes each pair self-contained; nested dicts contribute their inner pairs (the
 /// `key = {` opener has no `;` and is skipped). The closing brace is never required — the OS
 /// truncates long log entries at ~1KB, and a cut payload should still yield what it kept.
+///
+/// A value that is itself escaped JSON — an SDK cramming a whole attribute set through one
+/// string, printed by the plist as `params = "{\n  \"key\" : false\n}";` — is unwrapped into
+/// its own pairs, mirroring `flattenJson`'s escaped-JSON unwrap.
 private func parsePlistDict(_ text: String) -> [String: String] {
     let ns = text as NSString
     var out: [String: String] = [:]
     for match in plistPairPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
-        out[ns.substring(with: match.range(at: 1))] = ns.substring(with: match.range(at: 2))
+        let key = ns.substring(with: match.range(at: 1))
+        let value = ns.substring(with: match.range(at: 2))
+        if value.hasPrefix("{") || value.hasPrefix("[") {
+            let unescaped = value
+                .replacingOccurrences(of: "\\\"", with: "\"")
+                .replacingOccurrences(of: "\\n", with: "\n")
+            if let nested = jsonObject(from: unescaped) {
+                let flat = flattenJson(nested)
+                if !flat.isEmpty {
+                    out.merge(flat) { current, _ in current }
+                    continue
+                }
+            }
+        }
+        out[key] = value
     }
     return out
 }
