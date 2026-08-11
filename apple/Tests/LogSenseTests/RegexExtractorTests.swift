@@ -123,6 +123,19 @@ final class RegexExtractorTests: XCTestCase {
         XCTAssertNil(arrow("App", "purchase -> {sku=pro}")!.tag)
     }
 
+    func testDeclaredEventTagsEnumerateLiteralAlternationsOnly() {
+        let patterns = [
+            #"\[(?<tag>Alpha|Beta|Gamma)\] event name = (?<name>\S+)"#,
+            #"\[(?<tag>Delta)\] name = (?<name>\S+)"#,
+            #"\[(?<tag>Alpha)\] repeat = (?<name>\S+)"#,   // dedupe
+            #"\[(?<tag>\w+)\] dynamic = (?<name>\S+)"#,    // not enumerable
+            #"no tag group here (?<name>\S+)"#,
+        ].joined(separator: "\n")
+        XCTAssertEqual(["Alpha", "Beta", "Gamma", "Delta"], declaredEventTags(patterns))
+        XCTAssertEqual([], declaredEventTags(nil))
+        XCTAssertEqual([], declaredEventTags(#"evt=(?<name>\w+)"#))
+    }
+
     func testCapturedTagFlowsIntoTheEventRecordLogTagOtherwise() {
         var config = LogSenseConfig()
         config.analyticsTagPatterns = [

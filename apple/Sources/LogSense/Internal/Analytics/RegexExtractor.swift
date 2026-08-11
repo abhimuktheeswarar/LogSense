@@ -69,6 +69,36 @@ internal struct RegexExtractor {
     }
 }
 
+/// The event tags a pattern set will produce, for display (Settings): each `(?<tag>…)` group
+/// whose body is a literal alternation (`GA|MRI|MoEngage`) contributes its alternatives, in
+/// pattern order, deduped. A non-literal capture (`\w+`) can't be enumerated and adds nothing —
+/// the row then just shows its log-tag key, same as a pattern with no tag group.
+internal func declaredEventTags(_ patterns: String?) -> [String] {
+    guard let patterns else { return [] }
+    var out: [String] = []
+    var seen = Set<String>()
+    for line in patterns.split(separator: "\n") {
+        guard let start = line.range(of: "(?<tag>") else { continue }
+        var body = ""
+        var depth = 1
+        var i = start.upperBound
+        while i < line.endIndex {
+            let c = line[i]
+            if c == "(" { depth += 1 }
+            if c == ")" { depth -= 1; if depth == 0 { break } }
+            body.append(c)
+            i = line.index(after: i)
+        }
+        let alternatives = body.split(separator: "|").map(String.init)
+        let literal = !body.isEmpty && alternatives.allSatisfy { alt in
+            alt.allSatisfy { $0.isLetter || $0.isNumber || "_-. ".contains($0) }
+        }
+        guard literal else { continue }
+        for alt in alternatives where seen.insert(alt).inserted { out.append(alt) }
+    }
+    return out
+}
+
 /// A tag's extractor: its regex (unusable/empty falls back), or the built-in parser when nil.
 internal func extractorFor(_ pattern: String?) -> Extractor {
     if let pattern, !pattern.trimmingCharacters(in: .whitespaces).isEmpty,

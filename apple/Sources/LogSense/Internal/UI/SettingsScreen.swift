@@ -67,6 +67,14 @@ internal struct SettingsScreen: View {
                             Text("Predefined").font(.footnote)
                         } label: {
                             Text(tag).font(.system(size: 15, design: .monospaced))
+                            // A dispatcher pattern splits one log tag into per-source event
+                            // tags — those are what the Events screen shows, so list them.
+                            let split = declaredEventTags(core.config.analyticsTagPatterns[tag] ?? nil)
+                            if !split.isEmpty {
+                                Text(split.joined(separator: " · "))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     ForEach(qaTags.keys.sorted(), id: \.self) { tag in
@@ -74,6 +82,12 @@ internal struct SettingsScreen: View {
                             Text("Custom").font(.footnote)
                         } label: {
                             Text(tag).font(.system(size: 15, design: .monospaced))
+                            let split = declaredEventTags(qaTags[tag] ?? nil)
+                            if !split.isEmpty {
+                                Text(split.joined(separator: " · "))
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                         .swipeActions {
                             Button("Delete", role: .destructive) {
