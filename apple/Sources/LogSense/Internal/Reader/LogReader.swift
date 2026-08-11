@@ -23,14 +23,27 @@ internal final class LogReader {
     private(set) var entriesDelivered = 0
     private(set) var lastError: String?
 
+    /// Opening a store costs up to ~1s regardless of new-line count, and a retained store DOES
+    /// see entries logged after its creation (measured on current OS — the old frozen-snapshot
+    /// observation no longer holds). Reuse it while polls deliver; after an empty poll,
+    /// re-create — so on any OS where the store really is a snapshot, capture self-heals
+    /// within one poll instead of going silently blind.
+    private var cachedStore: OSLogStore?
+    private var lastPollDelivered = false
+
     func poll() -> [LogEntry] {
         polls += 1
         let store: OSLogStore
-        do {
-            store = try OSLogStore(scope: .currentProcessIdentifier)
-        } catch {
-            lastError = "store init: \(error)"
-            return []
+        if let cached = cachedStore, lastPollDelivered {
+            store = cached
+        } else {
+            do {
+                store = try OSLogStore(scope: .currentProcessIdentifier)
+            } catch {
+                lastError = "store init: \(error)"
+                return []
+            }
+            cachedStore = store
         }
         let entries: AnySequence<OSLogEntry>
         do {
@@ -84,6 +97,7 @@ internal final class LogReader {
             }
         }
         entriesDelivered += out.count
+        lastPollDelivered = !out.isEmpty
         return out
     }
 
