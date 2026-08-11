@@ -94,7 +94,7 @@ internal final class LogSenseCore {
     private init(config: LogSenseConfig) {
         self.config = config
         self.bufferLimit = Self.ramAwareBufferLimit(config.maxBufferedLines)
-        self.buffer = LogBuffer(maxLines: bufferLimit)
+        self.buffer = LogBuffer(maxLines: bufferLimit, maxBytes: config.maxBufferedBytes)
         self.state = LogSenseState()
         self.hostName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String

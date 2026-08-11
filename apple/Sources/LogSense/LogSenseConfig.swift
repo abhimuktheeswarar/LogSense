@@ -28,6 +28,11 @@ public struct LogSenseConfig {
     /// Max log lines kept in the in-memory buffer (clamped down on low-RAM devices).
     public var maxBufferedLines: Int
 
+    /// Byte ceiling for the buffered messages — a safety bound, not a target. The line cap alone
+    /// would let a host printing huge lines hold hundreds of MB; whichever cap is hit first
+    /// evicts the oldest lines.
+    public var maxBufferedBytes: Int
+
     /// Whether LogSense installs an uncaught-exception handler to capture NSException crashes.
     /// It always **chains to any handler already installed**, so your existing crash reporter
     /// still runs. Signal-level crashes (fatalError, force-unwraps) and hangs are captured via
@@ -96,6 +101,7 @@ public struct LogSenseConfig {
         analyticsTagPatterns: [String: String?] = [:],
         analyticsExtractor: ((_ tag: String, _ message: String) -> AnalyticsEvent?)? = nil,
         maxBufferedLines: Int = 50_000,
+        maxBufferedBytes: Int = 50_000_000,
         captureCrashes: Bool = true,
         captureStandardOutput: Bool = true,
         detectLeakedScreens: Bool = true,
@@ -113,6 +119,7 @@ public struct LogSenseConfig {
         self.analyticsTagPatterns = analyticsTagPatterns
         self.analyticsExtractor = analyticsExtractor
         self.maxBufferedLines = maxBufferedLines
+        self.maxBufferedBytes = maxBufferedBytes
         self.captureCrashes = captureCrashes
         self.captureStandardOutput = captureStandardOutput
         self.detectLeakedScreens = detectLeakedScreens

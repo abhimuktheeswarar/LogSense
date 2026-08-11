@@ -10,16 +10,24 @@ internal final class LogBuffer {
     /// Floored at one line. A zero or negative cap would make the trim in `append` misbehave, so
     /// the buffer defends itself rather than trusting every caller to clamp.
     private let maxLines: Int
+    /// Byte ceiling for the buffered messages — the line cap alone lets a print-heavy host
+    /// (16KB stdout lines) hold hundreds of MB. Floored at 1MB for the same defensive reason.
+    private let maxBytes: Int
 
     private let lock = NSLock()
     private var storage: [LogEntry] = []
     private var dirty = false
     private var snapshotStorage: [LogEntry] = []
     private var totalReceivedStorage = 0
+    private var bytesStored = 0
 
-    init(maxLines: Int) {
+    init(maxLines: Int, maxBytes: Int = 50_000_000) {
         self.maxLines = Swift.max(1, maxLines)
+        self.maxBytes = Swift.max(1_000_000, maxBytes)
     }
+
+    /// Message bytes plus a fixed allowance for the entry's scalar fields.
+    private func cost(of message: String) -> Int { message.utf8.count + 64 }
 
     /// Cumulative entries seen this run — keeps climbing past the buffer cap; reset by `clear()`.
     var totalReceived: Int {
@@ -51,10 +59,28 @@ internal final class LogBuffer {
                             message: entry.message)
         }
         storage.append(contentsOf: stamped)
-        if storage.count > maxLines { storage.removeFirst(storage.count - maxLines) }
+        for entry in stamped { bytesStored += cost(of: entry.message) }
+        trimLocked()
         totalReceivedStorage += stamped.count
         dirty = true
         return stamped
+    }
+
+    /// Evicts oldest entries while either cap is exceeded. The newest line always survives,
+    /// same as the line-cap floor — a single over-budget entry is kept, not vanished.
+    /// Caller holds the lock.
+    private func trimLocked() {
+        var dropped = 0
+        var freed = 0
+        while (storage.count - dropped > maxLines) || (bytesStored - freed > maxBytes) {
+            guard dropped < storage.count - 1 else { break }
+            freed += cost(of: storage[dropped].message)
+            dropped += 1
+        }
+        if dropped > 0 {
+            storage.removeFirst(dropped)
+            bytesStored -= freed
+        }
     }
 
     /// Attaches a continuation line to the newest entry (multi-line log output).
@@ -66,6 +92,8 @@ internal final class LogBuffer {
             level: last.level, subsystem: last.subsystem, tag: last.tag,
             message: last.message + "\n" + raw
         )
+        bytesStored += raw.utf8.count + 1
+        trimLocked()
         dirty = true
     }
 
@@ -85,6 +113,7 @@ internal final class LogBuffer {
         storage.removeAll()
         snapshotStorage.removeAll()
         totalReceivedStorage = 0
+        bytesStored = 0
         dirty = false
     }
 }
