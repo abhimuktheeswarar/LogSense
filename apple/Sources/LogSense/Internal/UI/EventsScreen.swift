@@ -70,23 +70,29 @@ internal struct EventsScreen: View {
                     )
                     .frame(maxHeight: .infinity)
                 } else {
-                    List {
-                        ForEach(groups, id: \.0.id) { meta, events in
-                            Section {
-                                ForEach(events) { event in
-                                    EventRow(event: event, dimmed: !meta.isCurrent)
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { selected = event }
+                    ScrollViewReader { proxy in
+                        List {
+                            ForEach(groups, id: \.0.id) { meta, events in
+                                Section {
+                                    ForEach(events) { event in
+                                        EventRow(event: event, dimmed: !meta.isCurrent)
+                                            .contentShape(Rectangle())
+                                            .onTapGesture { selected = event }
+                                    }
+                                    .onDelete { offsets in
+                                        for offset in offsets { core.deleteEvent(events[offset]) }
+                                    }
+                                } header: {
+                                    sessionHeader(meta)
                                 }
-                                .onDelete { offsets in
-                                    for offset in offsets { core.deleteEvent(events[offset]) }
-                                }
-                            } header: {
-                                sessionHeader(meta)
                             }
                         }
+                        .listStyle(.plain)
+                        // Reopening the UI lands on the latest — the list is newest-first.
+                        .onChange(of: state.uiEpoch) { _ in
+                            if let top = displayed.first?.id { proxy.scrollTo(top, anchor: .top) }
+                        }
                     }
-                    .listStyle(.plain)
                 }
             }
             .navigationTitle("Events")

@@ -23,6 +23,8 @@ internal final class LogSenseState: ObservableObject {
     @Published var crashes: [StoredCrash] = []
     /// Read crash reports (by `StoredCrash.readKey`); the tab badge counts the rest.
     @Published var readCrashKeys: Set<String> = Prefs.readCrashKeys()
+    /// Bumped each time the UI is (re)opened — screens jump back to their latest content.
+    @Published var uiEpoch = 0
     /// Signal hits, oldest first, in-memory — they die with the buffer they point into.
     @Published var signalHits: [SignalHit] = []
     /// Stored analytics events, newest first, across sessions.
@@ -339,9 +341,15 @@ internal final class LogSenseCore {
                 statsLock.lock()
                 sessionEventCount += stored.count
                 statsLock.unlock()
+                let cap = max(1, config.maxStoredEvents)
                 Task { @MainActor [state] in
                     // Batch entries arrive oldest-first; the published list stays newest-first.
                     state.events.insert(contentsOf: stored.reversed(), at: 0)
+                    // Same ceiling as the store: a chatty session must not grow the published
+                    // list (and every screen diffing it) without bound.
+                    if state.events.count > cap {
+                        state.events.removeLast(state.events.count - cap)
+                    }
                 }
             }
         }
@@ -463,6 +471,7 @@ internal final class LogSenseCore {
     @MainActor
     func setUIVisible(_ visible: Bool) {
         uiVisible = visible
+        if visible { state.uiEpoch += 1 }
         guard visible, !paused else { return }
         // Catch up immediately — the next poll may be seconds away on the stretched cadence.
         state.snapshot = buffer.currentSnapshot()

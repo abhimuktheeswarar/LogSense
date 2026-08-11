@@ -87,6 +87,7 @@ internal struct SignalsScreen: View {
                     // instead of the whole VStack clustering mid-screen.
                     .frame(maxHeight: .infinity)
                 } else {
+                    ScrollViewReader { proxy in
                     List {
                         ForEach(Array(hits.enumerated()), id: \.offset) { _, hit in
                             SignalRow(hit: hit)
@@ -109,6 +110,11 @@ internal struct SignalsScreen: View {
                         }
                     }
                     .listStyle(.plain)
+                    // Reopening the UI lands on the latest — the list is newest-first.
+                    .onChange(of: state.uiEpoch) { _ in
+                        if !hits.isEmpty { proxy.scrollTo(0, anchor: .top) }
+                    }
+                    }
                 }
         }
     }

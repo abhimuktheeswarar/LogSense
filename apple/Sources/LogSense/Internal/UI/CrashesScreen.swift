@@ -89,6 +89,7 @@ internal struct CrashesScreen: View {
             )
             .frame(maxHeight: .infinity)
         } else {
+            ScrollViewReader { proxy in
             List {
                 ForEach(groups, id: \.0.id) { meta, crashes in
                     Section {
@@ -122,6 +123,11 @@ internal struct CrashesScreen: View {
                 }
             }
             .listStyle(.plain)
+            // Reopening the UI lands on the latest — the list is newest-first.
+            .onChange(of: state.uiEpoch) { _ in
+                if let top = state.crashes.first?.id { proxy.scrollTo(top, anchor: .top) }
+            }
+            }
         }
     }
 
