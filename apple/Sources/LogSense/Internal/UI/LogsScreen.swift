@@ -616,7 +616,7 @@ internal struct LogsScreen: View {
                 Text("Debugger attached")
                     .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(.blue)
-                Text("Log lines are going to the debugger console instead of the log store. Add IDEPreferLogStreaming=YES to the scheme's Run environment to get both, or launch from the app icon.")
+                Text("The OS hands this app's log stream to the debugger, so only print() output lands here. Stop the debug session and launch from the app icon for full capture.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }

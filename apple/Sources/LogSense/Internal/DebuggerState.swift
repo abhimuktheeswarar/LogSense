@@ -13,19 +13,10 @@ internal enum DebuggerState {
         return result == 0 && (info.kp_proc.p_flag & P_TRACED) != 0
     }()
 
-    /// `IDEPreferLogStreaming=YES` in the Run scheme makes the IDE subscribe to the log store
-    /// instead of taking the direct pipe — entries then reach both the IDE console and the
-    /// store, so capture keeps working under the debugger. The IDE consumes that variable
-    /// itself; what the child process actually sees (verified) is
-    /// `IDE_DISABLED_OS_ACTIVITY_DT_MODE=1` when the pipe is off, or `OS_ACTIVITY_DT_MODE`
-    /// truthy when the diversion is on.
-    static let logsDiverted: Bool = {
-        guard isAttached else { return false }
-        let env = ProcessInfo.processInfo.environment
-        if env["IDE_DISABLED_OS_ACTIVITY_DT_MODE"] != nil { return false }
-        if let mode = env["OS_ACTIVITY_DT_MODE"], mode != "0", mode.uppercased() != "NO" {
-            return true
-        }
-        return env["IDEPreferLogStreaming"]?.uppercased() != "YES"
-    }()
+    /// Measured on current toolchains: while a debugger is attached, the process's unified-log
+    /// entries never reach the log store — the IDE console consumes the stream exclusively,
+    /// and no environment knob restores store delivery (the historical prefer-log-streaming
+    /// variable is accepted by the IDE but entries still bypass the store). Attached means
+    /// diverted; stdout capture is unaffected.
+    static var logsDiverted: Bool { isAttached }
 }
