@@ -120,7 +120,31 @@ internal func parseParams(_ text: String) -> [String: String] {
         let pairs = parseSwiftDict(trimmed)
         if !pairs.isEmpty { return pairs }
     }
+    if trimmed.hasPrefix("{"), trimmed.contains(";") {
+        let pairs = parsePlistDict(trimmed)
+        if !pairs.isEmpty { return pairs }
+    }
     return parseKeyValues(text)
+}
+
+/// A pair from an ObjC plist/`NSDictionary` description — how Foundation prints dictionaries
+/// through `os_log`/`NSLog`: one `key = value;` per line, keys and values quoted only when they
+/// need it, keys sometimes carrying a parenthesised alias (`screen_class (_sc) = HomeVC;`).
+private let plistPairPattern = try! NSRegularExpression(
+    pattern: #""?([\w.\-]+)"?(?:\s*\([^)]*\))?\s*=\s*"?(.*?)"?;"#
+)
+
+/// Pairs from an ObjC plist-dict description: `{ key = value; "key 2" = "v 2"; }`. `.` staying
+/// line-bound makes each pair self-contained; nested dicts contribute their inner pairs (the
+/// `key = {` opener has no `;` and is skipped). The closing brace is never required — the OS
+/// truncates long log entries at ~1KB, and a cut payload should still yield what it kept.
+private func parsePlistDict(_ text: String) -> [String: String] {
+    let ns = text as NSString
+    var out: [String: String] = [:]
+    for match in plistPairPattern.matches(in: text, range: NSRange(location: 0, length: ns.length)) {
+        out[ns.substring(with: match.range(at: 1))] = ns.substring(with: match.range(at: 2))
+    }
+    return out
 }
 
 /// Parses `key=value, k2=v2` into a map, tolerating wrapping braces/brackets and commas *inside*

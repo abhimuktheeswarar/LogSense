@@ -105,4 +105,45 @@ final class DefaultExtractorTests: XCTestCase {
         XCTAssertEqual("Bus", event.params["lob"])
         XCTAssertEqual("2", event.params["position"])
     }
+
+    // MARK: ObjC plist-dict payloads — how Foundation prints NSDictionary through os_log
+
+    func testPlistDictPayload() {
+        let params = parseParams("{\n    page = commonHome;\n    screenName = home;\n}")
+        XCTAssertEqual(["page": "commonHome", "screenName": "home"], params)
+    }
+
+    func testPlistDictQuotedKeysValuesAndAliases() {
+        let payload = """
+        {
+            "creative_name" = "ACMEOFFER ";
+            "creative_slot" = 36;
+            screen_class (_sc) = HomeVC;
+            location = "Common Home";
+        }
+        """
+        let params = parseParams(payload)
+        XCTAssertEqual("ACMEOFFER ", params["creative_name"], "quoted value keeps its spacing")
+        XCTAssertEqual("36", params["creative_slot"])
+        XCTAssertEqual("HomeVC", params["screen_class"], "parenthesised alias is not part of the key")
+        XCTAssertEqual("Common Home", params["location"])
+    }
+
+    func testPlistDictTruncatedByEntryCapStillYieldsCompletePairs() {
+        // The OS caps log entries (~1KB): the closing brace and the tail of the payload are gone.
+        let params = parseParams("{\n    page = home;\n    userType = RETURNING;\n    langua")
+        XCTAssertEqual(["page": "home", "userType": "RETURNING"], params)
+    }
+
+    func testConfiguredRegexWithPlistPayloadEndToEnd() {
+        // The whole path a host configures: tag regex with name/params groups over a dispatch
+        // mirror line, params in plist-dict form, no closing brace required.
+        let extractor = extractorFor(#"\[Acme\] \[(?:GA|MRI)\] event name =\s+(?<name>\S+)\s*,\s*otherInfo = (?<params>\{[\s\S]*)"#)
+        let message = "[Acme] [GA] event name =  view_promotion , otherInfo = {\n    \"promotion_id\" = NA;\n    slot = 12;\n}"
+        let event = extractor("app", message)!
+        XCTAssertEqual("view_promotion", event.name)
+        XCTAssertEqual("NA", event.params["promotion_id"])
+        XCTAssertEqual("12", event.params["slot"])
+        XCTAssertNil(extractor("app", "[Acme] [GA] session refreshed"), "non-event lines are skipped")
+    }
 }
