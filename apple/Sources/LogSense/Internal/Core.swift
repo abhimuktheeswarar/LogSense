@@ -450,6 +450,22 @@ internal final class LogSenseCore {
     /// The last published total, for the "n lines buffered" paused copy.
     private var lastPublishedTotal = 0
 
+    /// UI visibility gates the snapshot fan-out: with the window hidden nobody reads the
+    /// published buffer, so shipping it to the main actor every publish is pure overhead in
+    /// the host. Benign race (poll thread reads, main sets): worth at most one skipped
+    /// publish, corrected on the next poll or on `setUIVisible(true)`'s catch-up.
+    private var uiVisible = false
+
+    @MainActor
+    func setUIVisible(_ visible: Bool) {
+        uiVisible = visible
+        guard visible, !paused else { return }
+        // Catch up immediately — the next poll may be seconds away on the stretched cadence.
+        state.snapshot = buffer.currentSnapshot()
+        state.totalReceived = buffer.totalReceived
+        if state.status == .waiting && state.totalReceived > 0 { state.status = .live }
+    }
+
     private func publishIfNeeded() {
         let total = buffer.totalReceived
         if paused {
@@ -458,6 +474,8 @@ internal final class LogSenseCore {
             }
             return
         }
+        // Skipping the flush too keeps the buffer's dirty state pending for the catch-up.
+        guard uiVisible else { return }
         guard let snapshot = buffer.flush() else {
             // Nothing new; still promote waiting → live once anything has arrived.
             Task { @MainActor [state] in

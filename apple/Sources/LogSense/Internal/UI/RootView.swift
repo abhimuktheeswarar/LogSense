@@ -39,6 +39,8 @@ internal struct RootView: View {
         .tint(core.config.accentColor ?? .accentColor)
         .preferredColorScheme(colorScheme(ThemeMode(rawValue: themeRaw) ?? core.config.theme))
         .onAppear {
+            // Hosts may embed LogSenseView without our window — visibility rides the view too.
+            core.setUIVisible(true)
             if let requested = state.requestedTab {
                 selection = requested
                 state.requestedTab = nil
@@ -50,6 +52,7 @@ internal struct RootView: View {
                 state.requestedTab = nil
             }
         }
+        .onDisappear { core.setUIVisible(false) }
     }
 
     private func colorScheme(_ mode: ThemeMode) -> ColorScheme? {

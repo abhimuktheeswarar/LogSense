@@ -12,6 +12,7 @@ internal enum LogSenseWindow {
 
     static func present() {
         guard let core = LogSenseCore.shared else { return }
+        core.setUIVisible(true)
         if let window {
             window.isHidden = false
             window.makeKey()
@@ -33,6 +34,7 @@ internal enum LogSenseWindow {
     }
 
     static func dismiss() {
+        LogSenseCore.shared?.setUIVisible(false)
         window?.isHidden = true
         window = nil
     }
