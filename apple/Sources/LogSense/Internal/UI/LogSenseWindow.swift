@@ -31,8 +31,7 @@ internal enum LogSenseWindow {
             ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first
         else { return }
 
-        // Neutralize host appearance proxies inside the overlay before any view lands in it.
-        UITabBar.appearance(whenContainedInInstancesOf: [LogSenseOverlayWindow.self]).isHidden = false
+        neutralizeHostAppearanceProxies()
 
         let window = LogSenseOverlayWindow(windowScene: scene)
         window.windowLevel = .normal + 1
@@ -47,6 +46,30 @@ internal enum LogSenseWindow {
         LogSenseCore.shared?.setUIVisible(false)
         window?.isHidden = true
         window = nil
+    }
+
+    /// Hosts customize UIKit chrome process-wide for their own brand — global appearance
+    /// proxies observed in real apps: hiding every tab bar, white nav-bar backgrounds and
+    /// custom title fonts. Those also style the UIKit views backing LogSense's SwiftUI UI
+    /// (a white bar behind a dark theme reads as broken colors). Rules scoped to the overlay
+    /// window are more specific, so they win here — and only here; fresh appearance objects
+    /// also take precedence over the host's legacy `barTintColor`/`backgroundColor` settings.
+    private static func neutralizeHostAppearanceProxies() {
+        let overlay: [UIAppearanceContainer.Type] = [LogSenseOverlayWindow.self]
+        UITabBar.appearance(whenContainedInInstancesOf: overlay).isHidden = false
+        let navBar = UINavigationBar.appearance(whenContainedInInstancesOf: overlay)
+        let standard = UINavigationBarAppearance()          // system default, follows dark/light
+        let scrollEdge = UINavigationBarAppearance()
+        scrollEdge.configureWithTransparentBackground()     // the system large-title resting look
+        navBar.standardAppearance = standard
+        navBar.compactAppearance = standard
+        navBar.scrollEdgeAppearance = scrollEdge
+        navBar.barTintColor = nil
+        navBar.tintColor = nil
+        // `backgroundColor` is a plain UIView property — a host setting it via the proxy
+        // paints the bar's backing view directly, bypassing the appearance objects above.
+        navBar.backgroundColor = nil
+        navBar.titleTextAttributes = nil
     }
 }
 #endif

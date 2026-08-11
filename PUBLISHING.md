@@ -26,8 +26,10 @@ SIGNING_PASSWORD=<GPG key passphrase>
 
 ## Release steps
 
-1. **Bump the version** — `VERSION_NAME` in `android/gradle.properties`, plus the version in
-   the dependency snippets of `README.md`, `android/README.md` and `apple/README.md`.
+1. **Bump the version** — `VERSION_NAME` in `android/gradle.properties`, `logSenseVersion` in
+   `apple/Sources/LogSense/Internal/UI/SettingsScreen.swift` (shown in the iOS Settings screen;
+   SPM has no build-time tag injection), plus the version in the dependency snippets of
+   `README.md`, `android/README.md` and `apple/README.md`.
 
 2. **Verify Android**
 
