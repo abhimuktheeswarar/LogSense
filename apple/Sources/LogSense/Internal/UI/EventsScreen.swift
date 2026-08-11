@@ -282,6 +282,16 @@ private struct EventDetailSheet: View {
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
                     }
 
+                    // The JSON block previews exactly what Copy/Share produce — one source of
+                    // truth, like Android's detail. The line it was lifted from sits below.
+                    sectionTitle("JSON")
+                    Text(eventJson)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(13)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
+
                     sectionTitle("Raw log line")
                     Text(event.record.raw)
                         .font(.system(size: 11.5, design: .monospaced))
@@ -291,7 +301,7 @@ private struct EventDetailSheet: View {
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
 
                     Button {
-                        UIPasteboard.general.string = copyJson()
+                        UIPasteboard.general.string = eventJson
                     } label: {
                         Text("Copy JSON")
                             .font(.system(size: 15, weight: .semibold))
@@ -310,7 +320,7 @@ private struct EventDetailSheet: View {
                     Button("Close") { dismiss() }
                 }
                 ToolbarItem(placement: .primaryAction) {
-                    ShareLink(item: copyJson()) { Image(systemName: "square.and.arrow.up") }
+                    ShareLink(item: eventJson) { Image(systemName: "square.and.arrow.up") }
                 }
             }
         }
@@ -326,11 +336,14 @@ private struct EventDetailSheet: View {
             .padding(.bottom, 7)
     }
 
-    private func copyJson() -> String {
+    /// The same envelope as the list-level export and Android's single-event share.
+    private var eventJson: String {
         let object: [String: Any] = [
-            "name": event.record.name,
-            "tag": event.record.tag,
+            "time": Format.time(event.record.timestamp),
             "timestamp": event.record.timestamp,
+            "session": event.sessionId,
+            "tag": event.record.tag,
+            "name": event.record.name,
             "params": event.record.params,
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys]),
