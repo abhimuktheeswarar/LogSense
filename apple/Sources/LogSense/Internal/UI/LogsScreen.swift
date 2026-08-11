@@ -274,9 +274,21 @@ internal struct LogsScreen: View {
 
     /// "Starting a custom tab from everything is the common way to make one."
     private func duplicateTab(_ tab: SavedFilter) {
+        // Duplicating a duplicate strips the suffix back to the base first, so names count
+        // up ("All copy", "All copy 2", …) instead of stacking ("All copy copy copy").
+        let source = tab.id == 0 ? "All" : tab.name
+        let base = source.replacingOccurrences(
+            of: #"\s+copy(\s+\d+)?$"#, with: "", options: .regularExpression
+        )
+        var name = "\(base) copy"
+        var n = 2
+        while tabs.contains(where: { $0.name == name }) {
+            name = "\(base) copy \(n)"
+            n += 1
+        }
         let next = SavedFilter(
             id: (tabs.map(\.id).max() ?? 0) + 1,
-            name: tab.id == 0 ? "All copy" : "\(tab.name) copy",
+            name: name,
             filter: tab.filter,
             viewMode: tab.viewMode
         )
