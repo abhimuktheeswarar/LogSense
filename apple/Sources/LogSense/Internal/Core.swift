@@ -21,6 +21,8 @@ internal final class LogSenseState: ObservableObject {
     @Published var frozenAtMs: Int64 = 0
     /// Stored crash reports, newest first, across sessions.
     @Published var crashes: [StoredCrash] = []
+    /// Read crash reports (by `StoredCrash.readKey`); the tab badge counts the rest.
+    @Published var readCrashKeys: Set<String> = Prefs.readCrashKeys()
     /// Signal hits, oldest first, in-memory — they die with the buffer they point into.
     @Published var signalHits: [SignalHit] = []
     /// Stored analytics events, newest first, across sessions.
@@ -264,10 +266,26 @@ internal final class LogSenseCore {
         refreshCrashes()
     }
 
+    @MainActor
+    func setCrashRead(_ crash: StoredCrash, _ read: Bool) {
+        var keys = state.readCrashKeys
+        if read { keys.insert(crash.readKey) } else { keys.remove(crash.readKey) }
+        state.readCrashKeys = keys
+        Prefs.setReadCrashKeys(keys)
+    }
+
     private func refreshCrashes() {
         guard let store = sessionStore else { return }
         let all = store.loadCrashes()
-        Task { @MainActor [state] in state.crashes = all }
+        Task { @MainActor [state] in
+            state.crashes = all
+            // Read-keys hygiene: deleted or pruned reports take their keys with them.
+            let live = state.readCrashKeys.intersection(all.map(\.readKey))
+            if live != state.readCrashKeys {
+                state.readCrashKeys = live
+                Prefs.setReadCrashKeys(live)
+            }
+        }
     }
 
     private func pollOnce() {

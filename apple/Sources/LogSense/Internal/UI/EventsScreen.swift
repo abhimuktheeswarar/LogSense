@@ -272,7 +272,8 @@ private struct EventDetailSheet: View {
                                         .frame(width: 112, alignment: .leading)
                                     Text(pair.value)
                                         .font(.system(size: 13, weight: .medium, design: .monospaced))
-                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .multilineTextAlignment(.trailing)
+                                        .frame(maxWidth: .infinity, alignment: .trailing)
                                 }
                                 .padding(.horizontal, 14)
                                 .padding(.vertical, 11)

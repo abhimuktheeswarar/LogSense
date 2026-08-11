@@ -5,6 +5,10 @@ internal struct StoredCrash: Identifiable, Equatable {
     /// The crash file's path — stable identity for lists and deletes.
     let id: String
     var record: CrashRecord
+
+    /// Read-state key: the file name (`crash_<ts>_<rnd>.json`) is unique and survives the
+    /// container path prefix changing across app updates; the full path does not.
+    var readKey: String { URL(fileURLWithPath: id).lastPathComponent }
 }
 
 /// One stored analytics event with the session it belongs to.

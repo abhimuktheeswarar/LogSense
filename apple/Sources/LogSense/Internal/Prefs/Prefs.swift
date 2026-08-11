@@ -69,4 +69,16 @@ internal enum Prefs {
     static func setLastSeenCrashMs(_ ms: Int64) {
         UserDefaults.standard.set(Double(ms), forKey: lastSeenCrashKey)
     }
+
+    private static let readCrashesKey = "com.msabhi.logsense.readCrashes"
+
+    /// Crash reports the user has read, keyed by crash file name — stable across launches
+    /// while the container path prefix is not. Drives the tab badge (unread only).
+    static func readCrashKeys() -> Set<String> {
+        Set(UserDefaults.standard.stringArray(forKey: readCrashesKey) ?? [])
+    }
+
+    static func setReadCrashKeys(_ keys: Set<String>) {
+        UserDefaults.standard.set(Array(keys).sorted(), forKey: readCrashesKey)
+    }
 }

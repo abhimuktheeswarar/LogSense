@@ -38,6 +38,8 @@ internal struct CrashesScreen: View {
             .onAppear { core.markCrashesSeen() }
             .navigationDestination(for: StoredCrash.self) { crash in
                 CrashReportScreen(crash: crash, appBinary: core.appBinary)
+                    // Opening a report reads it, like mail; the swipe covers without opening.
+                    .onAppear { core.setCrashRead(crash, true) }
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsScreen(core: core)
@@ -91,12 +93,28 @@ internal struct CrashesScreen: View {
                 ForEach(groups, id: \.0.id) { meta, crashes in
                     Section {
                         ForEach(crashes) { crash in
+                            let isRead = state.readCrashKeys.contains(crash.readKey)
                             NavigationLink(value: crash) {
-                                CrashRow(crash: crash)
+                                CrashRow(crash: crash, unread: !isRead)
                             }
-                        }
-                        .onDelete { offsets in
-                            for offset in offsets { core.deleteCrash(id: crashes[offset].id) }
+                            // Custom swipe actions suppress onDelete's built-in swipe, so the
+                            // delete lives here explicitly, on its usual trailing edge.
+                            .swipeActions(edge: .trailing) {
+                                Button(role: .destructive) {
+                                    core.deleteCrash(id: crash.id)
+                                } label: {
+                                    Label("Delete", systemImage: "trash")
+                                }
+                            }
+                            .swipeActions(edge: .leading) {
+                                Button {
+                                    core.setCrashRead(crash, !isRead)
+                                } label: {
+                                    Label(isRead ? "Mark as Unread" : "Mark as Read",
+                                          systemImage: isRead ? "envelope.badge" : "envelope.open")
+                                }
+                                .tint(.blue)
+                            }
                         }
                     } header: {
                         sessionHeader(meta)
@@ -123,10 +141,14 @@ internal struct CrashesScreen: View {
 
 internal struct CrashRow: View {
     let crash: StoredCrash
+    var unread: Bool = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
+                if unread {
+                    Circle().fill(Color.accentColor).frame(width: 8, height: 8)
+                }
                 TypeBadge(type: crash.record.type)
                 Text(Format.time(crash.record.timestamp))
                     .font(.system(size: 11.5))

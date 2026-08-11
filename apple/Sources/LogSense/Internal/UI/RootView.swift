@@ -28,7 +28,8 @@ internal struct RootView: View {
                 .tag(RootTab.events)
             CrashesScreen(core: core, onDone: onDone)
                 .tabItem { Label("Crashes", systemImage: "exclamationmark.triangle") }
-                .badge(state.crashes.count)
+                // Unread only — reading (or swiping) a report retires it from the badge.
+                .badge(state.crashes.filter { !state.readCrashKeys.contains($0.readKey) }.count)
                 .tag(RootTab.crashes)
             SignalsScreen(core: core, onDone: onDone)
                 .tabItem { Label("Signals", systemImage: "waveform.path.ecg") }
