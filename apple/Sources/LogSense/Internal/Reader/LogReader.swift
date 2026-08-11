@@ -21,12 +21,23 @@ internal final class LogReader {
         let entries: AnySequence<OSLogEntry>
         do {
             if let newestDate {
-                entries = try store.getEntries(at: store.position(date: newestDate))
+                // Push the boundary into the store as a predicate: the position hint is
+                // ignored on some OS versions, and materializing one OSLogEntry costs ~1ms —
+                // a chatty host's history must be skipped natively, not object-by-object.
+                // (`.reverse` + early-stop would also work, but that option is silently
+                // ignored too — measured, not assumed.) newestDate comes from entry dates,
+                // so the comparison never crosses clock domains.
+                entries = try store.getEntries(
+                    at: store.position(date: newestDate),
+                    matching: NSPredicate(format: "date >= %@", newestDate as NSDate)
+                )
             } else {
                 entries = try store.getEntries()
             }
         } catch {
-            return []
+            // A store that rejects the predicate still tails fine the expensive way.
+            guard let all = try? store.getEntries() else { return [] }
+            entries = all
         }
 
         var out: [LogEntry] = []

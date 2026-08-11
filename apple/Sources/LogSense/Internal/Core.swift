@@ -158,8 +158,13 @@ internal final class LogSenseCore {
         startCrashPipeline()
         pollTask = Task.detached(priority: .utility) { [weak self] in
             while !Task.isCancelled {
+                let started = DispatchTime.now().uptimeNanoseconds
                 self?.pollOnce()
-                try? await Task.sleep(nanoseconds: LogSenseCore.pollIntervalNs)
+                let elapsed = DispatchTime.now().uptimeNanoseconds - started
+                // A poll that got expensive (huge archive, translated binary) must not own a
+                // core: sleep at least twice what the poll cost, capped so tailing stays live.
+                let backoff = min(max(LogSenseCore.pollIntervalNs, elapsed * 2), 5_000_000_000)
+                try? await Task.sleep(nanoseconds: backoff)
             }
         }
     }
