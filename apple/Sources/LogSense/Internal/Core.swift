@@ -500,16 +500,14 @@ internal final class LogSenseCore {
     /// delegate (`LogSense.handleShortcut`), because iOS only delivers it there.
     @MainActor
     fileprivate func installEntryPoints() {
-        var items = UIApplication.shared.shortcutItems ?? []
-        if !items.contains(where: { $0.type == Self.shortcutType }) {
-            items.append(UIApplicationShortcutItem(
-                type: Self.shortcutType,
-                localizedTitle: "Open LogSense",
-                localizedSubtitle: nil,
-                icon: UIApplicationShortcutIcon(systemImageName: "list.bullet.rectangle"),
-                userInfo: nil
-            ))
-            UIApplication.shared.shortcutItems = items
+        assertShortcutPresence()
+        // Hosts that manage their own quick actions overwrite the whole `shortcutItems` array,
+        // taking ours with it. Shortcuts only matter once the app leaves the foreground, so
+        // re-asserting at didEnterBackground makes ours the last write that wins.
+        NotificationCenter.default.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.assertShortcutPresence()
         }
         // Notification taps go to the center's delegate. Most apps own that delegate — they forward
         // to LogSense.handleNotificationResponse. When nobody claims the slot by the time the app
@@ -524,6 +522,20 @@ internal final class LogSenseCore {
                 center.delegate = LogSenseNotificationDelegate.shared
             }
         }
+    }
+
+    @MainActor
+    private func assertShortcutPresence() {
+        var items = UIApplication.shared.shortcutItems ?? []
+        guard !items.contains(where: { $0.type == Self.shortcutType }) else { return }
+        items.append(UIApplicationShortcutItem(
+            type: Self.shortcutType,
+            localizedTitle: "Open LogSense",
+            localizedSubtitle: nil,
+            icon: UIApplicationShortcutIcon(systemImageName: "list.bullet.rectangle"),
+            userInfo: nil
+        ))
+        UIApplication.shared.shortcutItems = items
     }
     #endif
 }
