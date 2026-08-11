@@ -111,4 +111,35 @@ final class RegexExtractorTests: XCTestCase {
         )! // first line is an invalid regex, second blank, third valid
         XCTAssertEqual("app_open", e("T", "EV:app_open")!.name)
     }
+
+    // One dispatcher, one log tag, many SDKs: the `tag` group names the real source per line.
+    func testTagGroupNamesTheEventSource() {
+        let e = RegexExtractor.of(#"\[(?<tag>\w+)\] event name = (?<name>\S+) info = (?<params>\{.*)"#)!
+        let event = e("App", "[AlphaSDK] event name = purchase info = {sku = pro;}")!
+        XCTAssertEqual("AlphaSDK", event.tag)
+        XCTAssertEqual("purchase", event.name)
+        XCTAssertEqual("pro", event.params["sku"])
+        // No tag group declared -> nil, callers keep the log tag.
+        XCTAssertNil(arrow("App", "purchase -> {sku=pro}")!.tag)
+    }
+
+    func testCapturedTagFlowsIntoTheEventRecordLogTagOtherwise() {
+        var config = LogSenseConfig()
+        config.analyticsTagPatterns = [
+            "App": [
+                #"\[(?<tag>\w+)\] event name = (?<name>\S+)"#,
+                #"evt=(?<name>\w+)"#,
+            ].joined(separator: "\n"),
+        ]
+        let detector = AnalyticsDetector(config: config)
+        let entries = [
+            LogEntry(id: 1, timeMs: 1, pid: 1, tid: 1, level: .info, subsystem: "s",
+                     tag: "App", message: "[AlphaSDK] event name = purchase"),
+            LogEntry(id: 2, timeMs: 2, pid: 1, tid: 1, level: .info, subsystem: "s",
+                     tag: "App", message: "evt=login"),
+        ]
+        let records = detector.process(entries)
+        XCTAssertEqual(["AlphaSDK", "App"], records.map(\.tag))
+        XCTAssertEqual(["purchase", "login"], records.map(\.name))
+    }
 }

@@ -48,7 +48,10 @@ internal final class AnalyticsDetector {
             else { return nil }
             return EventRecord(
                 timestamp: entry.timeMs,
-                tag: entry.tag,
+                // An extractor may name the event's real source (regex `tag` group) — on
+                // platforms where every SDK's lines share one log tag, that's the only way
+                // events split into meaningful tags.
+                tag: event.tag ?? entry.tag,
                 name: event.name,
                 params: event.params,
                 raw: entry.message

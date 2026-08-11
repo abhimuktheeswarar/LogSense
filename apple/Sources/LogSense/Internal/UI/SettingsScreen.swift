@@ -90,7 +90,7 @@ internal struct SettingsScreen: View {
                 } header: {
                     Text("Events capture tags")
                 } footer: {
-                    Text("Predefined tags come from LogSenseConfig and are locked. Added tags can carry an optional regex with (?<name>) and (?<params>) groups; empty uses the built-in parser.")
+                    Text("Predefined tags come from LogSenseConfig and are locked. Added tags can carry an optional regex with (?<name>), (?<params>) and (?<tag>) groups; empty uses the built-in parser.")
                 }
 
                 Section {

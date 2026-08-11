@@ -11,9 +11,12 @@ public struct LogSenseConfig {
     ///   `name k=v, k2=v2` and Swift-`Dictionary`-description payloads like `["k": v, "k2": v2]`;
     ///   a `params` group capturing a `{json}` object is parsed as JSON, and string fields that
     ///   themselves hold escaped JSON are unwrapped into flat params).
-    /// - value a regex → use it for *that tag only*, exposing a named group `name` (required) and an
-    ///   optional `params`. Use this for SDKs the built-in parser can't infer (e.g. those that bury
-    ///   the event name inside a JSON payload). A line that doesn't match is skipped.
+    /// - value a regex → use it for *that tag only*, exposing a named group `name` (required) and
+    ///   optional `params` and `tag` groups. A `tag` capture replaces the log tag as the event's
+    ///   tag — the way to split events by source when several SDKs funnel through one dispatcher
+    ///   and share a single log tag. Use a regex for SDKs the built-in parser can't infer (e.g.
+    ///   those that bury the event name inside a JSON payload). A line that doesn't match is
+    ///   skipped.
     ///
     /// QA can add further tags (with their own optional regex) in Settings, but the ones set here are
     /// locked and can't be edited in-app. `analyticsExtractor`, if set, overrides the regex for every
