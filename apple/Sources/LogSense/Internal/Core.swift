@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import OSLog
 #if os(iOS)
 import UIKit
 import UserNotifications
@@ -36,6 +37,10 @@ internal final class LogSenseState: ObservableObject {
     @Published var events: [StoredEvent] = []
     /// A tab something outside the UI asked for (a notification tap); consumed by RootView.
     @Published var requestedTab: RootTab?
+    /// True when polling keeps returning nothing at all: the launch diverted the unified-log
+    /// stream away from the store (an Xcode-launched run does this even with the debugger
+    /// off, and such a launch is indistinguishable from a normal one from inside the process).
+    @Published var storeSilent = false
     /// A log line the Signals tab asked to reveal; consumed by LogsScreen (jump + line sheet).
     @Published var revealEntryId: Int64?
 }
@@ -165,6 +170,10 @@ internal final class LogSenseCore {
         }
         #endif
         startCrashPipeline()
+        // One guaranteed unified-log line: a healthy store returns it within a poll or two,
+        // so a stream still empty after several polls is *diverted* (Xcode-launched run),
+        // not merely a quiet host. `storeSilent` keys off exactly that.
+        os_log("LogSense capture started")
         pollTask = Task.detached(priority: .utility) { [weak self] in
             // Opening the store and building its enumerator costs real time (~1s observed on
             // the simulator) regardless of how many lines are new, so cadence is the only
@@ -337,8 +346,17 @@ internal final class LogSenseCore {
                 atomically: true, encoding: .utf8
             )
         }
+        // The probe line above guarantees a healthy store is never this empty for this long.
+        let silent = logReader.polls >= 5 && logReader.entriesDelivered == 0
+        if silent != storeSilentSeen {
+            storeSilentSeen = silent
+            Task { @MainActor [weak self] in self?.state.storeSilent = silent }
+        }
         return !batch.isEmpty
     }
+
+    /// Poll-thread mirror of `state.storeSilent`, so the main actor is only touched on change.
+    private var storeSilentSeen = false
 
     private func ingestStdout(_ lines: [String]) {
         let now = Int64(Date().timeIntervalSince1970 * 1000)

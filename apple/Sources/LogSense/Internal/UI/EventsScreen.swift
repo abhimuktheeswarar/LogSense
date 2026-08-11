@@ -51,6 +51,9 @@ internal struct EventsScreen: View {
             // swallows the large navigation title.
             VStack(spacing: 0) {
                 LiveStatusRow(status: state.status, detail: "\(state.events.count.formatted()) captured · \(tags.count) \(tags.count == 1 ? "tag" : "tags")")
+                // Events are lifted from the unified-log stream — when that stream is diverted
+                // (debugger, or any Xcode-launched run), this tab stays empty with no clue why.
+                if DebuggerState.logsDiverted || state.storeSilent { DivertedStreamCard().padding(.top, 6) }
                 if tags.count > 1 { tagPills }
                 if state.events.isEmpty {
                     EmptyStateView(

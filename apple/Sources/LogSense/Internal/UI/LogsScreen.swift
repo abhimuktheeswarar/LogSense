@@ -144,7 +144,7 @@ internal struct LogsScreen: View {
                 header(rows: all)
                 tabsRow
                 filterBand
-                if DebuggerState.logsDiverted { debuggerBanner.padding(.top, 8) }
+                if DebuggerState.logsDiverted || state.storeSilent { debuggerBanner.padding(.top, 8) }
                 if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                 if state.status == .paused { pausedBanner.padding(.top, 8) }
                 content(rows: rows, hiddenOlder: all.count - rows.count, matches: matches)
@@ -616,28 +616,7 @@ internal struct LogsScreen: View {
 
     // MARK: banners & states
 
-    /// A debugger diverts the process's unified-log stream to its own console — the store
-    /// (and therefore this screen) misses those lines. Say so; a quiet stream here otherwise
-    /// reads as LogSense being broken.
-    private var debuggerBanner: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "ant").foregroundStyle(.blue)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Debugger attached")
-                    .font(.system(size: 13.5, weight: .semibold))
-                    .foregroundStyle(.blue)
-                Text("The OS hands this app's log stream to the debugger, so only print() output lands here. Stop the debug session and launch from the app icon for full capture.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-        .padding(12)
-        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
-        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.blue.opacity(0.3), lineWidth: 0.5))
-        .padding(.horizontal, 16)
-        .padding(.bottom, 6)
-    }
+    private var debuggerBanner: some View { DivertedStreamCard() }
 
     private var pausedBanner: some View {
         HStack(spacing: 10) {
@@ -1400,6 +1379,36 @@ internal struct EmptyStateView: View {
 /// The design's "capture continues" reassurance line for the Events, Crashes and Signals tabs:
 /// status dot + a per-tab detail. Tracks the same global CaptureStatus as the Logs row — the
 /// app-bar pause is global (Android behaviour), so no tab may claim Live while paused.
+/// A debugger diverts the process's unified-log stream to its own console — and an
+/// Xcode-launched run does the same even with the debugger off, while looking like a normal
+/// launch from inside the process. Either way the store (and every screen it feeds) misses
+/// those lines; say so, or a quiet stream reads as LogSense being broken. Shown when the
+/// debugger is visibly attached OR the store has provably returned nothing (`storeSilent`).
+internal struct DivertedStreamCard: View {
+    var body: some View {
+        let attached = DebuggerState.logsDiverted
+        HStack(spacing: 10) {
+            Image(systemName: "ant").foregroundStyle(.blue)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(attached ? "Debugger attached" : "Log stream diverted")
+                    .font(.system(size: 13.5, weight: .semibold))
+                    .foregroundStyle(.blue)
+                Text(attached
+                     ? "The OS hands this app's log stream to the debugger, so only print() output lands here. Stop the debug session and launch from the app icon for full capture."
+                     : "Nothing from this app is reaching the system log store — a run launched from Xcode diverts the stream even without the debugger. Build (⌘B), then launch from the app icon for full capture.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+        }
+        .padding(12)
+        .background(Color.blue.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .overlay(RoundedRectangle(cornerRadius: 14).strokeBorder(Color.blue.opacity(0.3), lineWidth: 0.5))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+    }
+}
+
 internal struct LiveStatusRow: View {
     let status: CaptureStatus
     let detail: String
