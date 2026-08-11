@@ -131,7 +131,14 @@ struct ContentView: View {
         logger.notice("using fallback endpoint")
         NSLog("NSLog line at startup")
         print("print line at startup")
+        // Events across every configured tag, so the Events screen has pills to scope by.
         analytics.info("screen_view screen=Home, source=launch")
+        analytics.info("add_to_cart Bundle[{item_id=42, qty=2}]")
+        analytics.info(#"purchase {"sku":"pro","price":9.99}"#)
+        telemetry.info("logEvent = checkout_started -> {cart=3, total=1499}")
+        telemetry.info("logEvent = app_ready -> {cold_start_ms=412}")
+        metrics.info("screen_render screen=Home, ms=182")
+        metrics.info("frame_drop screen=Home, dropped=4")
         // Late enough to be the newest lines once LogSense is open — keeps scripted screenshots honest.
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.5) {
             logger.error("Demo trouble: payment declined")
