@@ -57,13 +57,23 @@ internal final class SignalDetector {
         return compiled
     }
 
+    /// Signals scan only the head of each message: every catalog pattern's evidence leads the
+    /// line, and ~15 rules × full scans over 16KB print() lines is real CPU for zero extra
+    /// matches. A pattern whose marker starts past this many characters is deliberately missed.
+    static let scanChars = 1_024
+
     /// ponytail: ~15 predicates × 1–2 substring scans per line, first match wins. Fine for a debug
     /// tool at real log rates; if it ever shows in a profile, bucket the rules by subsystem.
     func process(_ batch: [LogEntry]) {
         let rules = rules()
         if rules.isEmpty { return }
         let found = batch.compactMap { entry -> SignalHit? in
-            guard let (signal, _) = rules.first(where: { $0.1(entry) }) else { return nil }
+            let scanned = entry.message.count <= Self.scanChars
+                ? entry
+                : LogEntry(id: entry.id, timeMs: entry.timeMs, pid: entry.pid, tid: entry.tid,
+                           level: entry.level, subsystem: entry.subsystem, tag: entry.tag,
+                           message: String(entry.message.prefix(Self.scanChars)))
+            guard let (signal, _) = rules.first(where: { $0.1(scanned) }) else { return nil }
             return SignalHit(
                 signal: signal,
                 entryId: entry.id,

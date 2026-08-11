@@ -25,6 +25,20 @@ final class SignalDetectorTests: XCTestCase {
         return d.hits.map(\.signal.id)
     }
 
+    func testScanningIsBoundedToTheHeadOfTheMessage() {
+        let padding = String(repeating: "z", count: SignalDetector.scanChars + 500)
+        // Marker leading a huge line: still detected.
+        XCTAssertEqual(
+            ["ui.constraints"],
+            idsFor(entry("t", "Unable to simultaneously satisfy constraints. " + padding))
+        )
+        // Marker buried past the scan window: deliberately missed — the contract, not a bug.
+        XCTAssertEqual(
+            [],
+            idsFor(entry("t", padding + " Unable to simultaneously satisfy constraints."))
+        )
+    }
+
     func testDetectsAFaultLine() {
         XCTAssertEqual(
             ["crash.fault"],
