@@ -134,7 +134,7 @@ internal struct LogsScreen: View {
                 header(rows: rows)
                 tabsRow
                 filterBand
-                if DebuggerState.isAttached { debuggerBanner.padding(.top, 8) }
+                if DebuggerState.logsDiverted { debuggerBanner.padding(.top, 8) }
                 if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                 if state.status == .paused { pausedBanner.padding(.top, 8) }
                 content(rows: rows, matches: matches)
@@ -616,7 +616,7 @@ internal struct LogsScreen: View {
                 Text("Debugger attached")
                     .font(.system(size: 13.5, weight: .semibold))
                     .foregroundStyle(.blue)
-                Text("The system sends this app's log lines to the debugger console instead of the log store. Launch from the app icon for full capture.")
+                Text("Log lines are going to the debugger console instead of the log store. Add IDEPreferLogStreaming=YES to the scheme's Run environment to get both, or launch from the app icon.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }

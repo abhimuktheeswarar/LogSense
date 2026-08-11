@@ -12,4 +12,11 @@ internal enum DebuggerState {
         let result = sysctl(&mib, UInt32(mib.count), &info, &size, nil, 0)
         return result == 0 && (info.kp_proc.p_flag & P_TRACED) != 0
     }()
+
+    /// `IDEPreferLogStreaming=YES` in the Run scheme makes the IDE subscribe to the log store
+    /// instead of taking the direct pipe — entries then reach both the IDE console and the
+    /// store, so capture keeps working under the debugger. Diversion is only in effect when
+    /// a debugger is attached and that variable is absent.
+    static let logsDiverted: Bool = isAttached
+        && ProcessInfo.processInfo.environment["IDEPreferLogStreaming"]?.uppercased() != "YES"
 }
