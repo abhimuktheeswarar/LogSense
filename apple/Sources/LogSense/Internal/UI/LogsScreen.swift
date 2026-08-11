@@ -133,6 +133,7 @@ internal struct LogsScreen: View {
             VStack(spacing: 0) {
                 header(rows: rows)
                 tabsRow
+                filterBand
                 if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                 if state.status == .paused { pausedBanner.padding(.top, 8) }
                 content(rows: rows, matches: matches)
@@ -288,6 +289,13 @@ internal struct LogsScreen: View {
                             if isPaused {
                                 Image(systemName: "pause.fill").font(.system(size: 9, weight: .bold))
                             }
+                            // A tab holding a filter carries a small funnel, so narrowed tabs
+                            // are visible without opening them.
+                            if !tab.filter.query.isEmpty || tab.filter.minLevel != .debug {
+                                Image(systemName: "line.3.horizontal.decrease")
+                                    .font(.system(size: 9, weight: .bold))
+                                    .opacity(0.55)
+                            }
                             Text(tab.name)
                                 .font(.system(size: 13, weight: isActive || isPaused ? .semibold : .medium))
                                 .lineLimit(1)
@@ -426,37 +434,33 @@ internal struct LogsScreen: View {
                         findActive.toggle()
                         if !findActive { findQuery = SearchQuery() }
                     }
-                    // The design's "View · «tab»" menu: density, line behavior, export, then the
-                    // destructive buffer wipe.
+                    // The menu titles itself with the tab's name — density and line behavior
+                    // apply to this tab alone. Every root's overflow ends with LogSense Settings.
                     Menu {
-                        Picker("Density", selection: $viewMode) {
-                            Text("Standard").tag(ViewMode.standard)
-                            Text("Compact").tag(ViewMode.compact)
-                            Text("Raw").tag(ViewMode.raw)
-                        }
-                        Toggle("Wrap Long Lines", isOn: $wrap)
-                        Toggle("Autoscroll", isOn: $autoscroll)
-                        if isActiveTabPaused {
-                            Button {
-                                resumeTab(activeTabId)
-                            } label: {
-                                Label("Resume This Tab", systemImage: "play.fill")
+                        Section(activeTabName) {
+                            Picker("Density", selection: $viewMode) {
+                                Text("Standard").tag(ViewMode.standard)
+                                Text("Compact").tag(ViewMode.compact)
+                                Text("Raw").tag(ViewMode.raw)
                             }
-                        } else {
-                            Button {
-                                pauseTab(activeTabId)
-                            } label: {
-                                Label("Pause This Tab", systemImage: "pause.fill")
+                            Toggle("Wrap Long Lines", isOn: $wrap)
+                            Toggle("Autoscroll", isOn: $autoscroll)
+                            if isActiveTabPaused {
+                                Button {
+                                    resumeTab(activeTabId)
+                                } label: {
+                                    Label("Resume This Tab", systemImage: "play.fill")
+                                }
+                            } else {
+                                Button {
+                                    pauseTab(activeTabId)
+                                } label: {
+                                    Label("Pause This Tab", systemImage: "pause.fill")
+                                }
                             }
                         }
                         Divider()
                         ShareLink(item: shareText(rows)) { Label("Export…", systemImage: "square.and.arrow.up") }
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label("Settings", systemImage: "gearshape")
-                        }
-                        Divider()
                         // A real wipe, per the design: signal hits die with the buffer they
                         // point into, and frozen tabs thaw — their snapshots would lie.
                         Button(role: .destructive) {
@@ -465,6 +469,12 @@ internal struct LogsScreen: View {
                             frozen = [:]
                         } label: {
                             Label("Clear Buffer", systemImage: "trash")
+                        }
+                        Divider()
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("LogSense Settings…", systemImage: "gearshape")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
@@ -484,11 +494,10 @@ internal struct LogsScreen: View {
                     .font(.system(size: 34, weight: .bold))
             }
             statusRow(rows: rows)
-            filterField
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
-        .padding(.bottom, 4)
+        .padding(.bottom, 6)
     }
 
     private func headerButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
@@ -514,7 +523,7 @@ internal struct LogsScreen: View {
                     let recording = tabs.count - tabs.filter { pausedTabs.contains($0.id) }.count
                     Text("· \(recording) of \(tabs.count) tabs recording")
                 } else if isFiltering {
-                    Text("· \(rows.count.formatted()) of \(state.snapshot.count.formatted()) shown")
+                    Text("· \(rows.count.formatted()) of \(state.snapshot.count.formatted()) in “\(activeTabName)”")
                 } else {
                     Text("· \(state.totalReceived.formatted()) lines")
                 }
@@ -534,22 +543,44 @@ internal struct LogsScreen: View {
 
     private var isFiltering: Bool { !query.isEmpty || minLevel != .debug }
 
-    private var filterField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-            TextField("Filter logs", text: $query)
-                .font(.system(size: 15, design: query.isEmpty ? .default : .monospaced))
-                .autocorrectionDisabled()
-                .textInputAutocapitalization(.never)
-            if !query.isEmpty {
-                Button {
-                    query = ""
-                } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+    private var activeTabName: String {
+        tabs.first { $0.id == activeTabId }?.name ?? "All"
+    }
+
+    /// The filter belongs to a tab, so its field sits below the tab row, on the tab's own
+    /// surface, and names the tab it narrows. The min-level chip sits beside it.
+    private var filterBand: some View {
+        HStack(spacing: 10) {
+            HStack(spacing: 7) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                TextField("Filter “\(activeTabName)”", text: $query)
+                    .font(.system(size: 15, design: query.isEmpty ? .default : .monospaced))
+                    .autocorrectionDisabled()
+                    .textInputAutocapitalization(.never)
+                if !query.isEmpty {
+                    Text("in “\(activeTabName)”")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    Button {
+                        query = ""
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
                 }
             }
+            .padding(.horizontal, 10)
+            .frame(height: 34)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(isFiltering ? Color.accentColor.opacity(0.15) : Color(.tertiarySystemFill))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .strokeBorder(isFiltering ? Color.accentColor.opacity(0.45) : .clear, lineWidth: 0.5)
+            )
             Menu {
                 Picker("Minimum level", selection: $minLevel) {
                     Text("All (D+)").tag(LogLevel.debug)
@@ -561,21 +592,15 @@ internal struct LogsScreen: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "line.3.horizontal.decrease")
-                    Text(minLevel == .debug ? "All" : "\(minLevel.letter)+")
+                    Text(minLevel == .debug ? "All levels" : "\(minLevel.letter)+")
                 }
                 .font(.system(size: 13, weight: .medium))
             }
         }
-        .padding(.horizontal, 10)
-        .frame(height: 36)
-        .background(
-            RoundedRectangle(cornerRadius: 11)
-                .fill(isFiltering ? Color.accentColor.opacity(0.15) : Color(.tertiarySystemFill))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 11)
-                .strokeBorder(isFiltering ? Color.accentColor.opacity(0.45) : .clear, lineWidth: 0.5)
-        )
+        .padding(.horizontal, 16)
+        .padding(.top, 9)
+        .padding(.bottom, 8)
+        .overlay(alignment: .bottom) { Divider() }
     }
 
     // MARK: banners & states

@@ -8,6 +8,7 @@ internal struct CrashesScreen: View {
     let onDone: (() -> Void)?
     @ObservedObject private var state: LogSenseState
     @State private var confirmClear = false
+    @State private var showSettings = false
 
     init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
@@ -38,15 +39,28 @@ internal struct CrashesScreen: View {
             .navigationDestination(for: StoredCrash.self) { crash in
                 CrashReportScreen(crash: crash, appBinary: core.appBinary)
             }
+            .navigationDestination(isPresented: $showSettings) {
+                SettingsScreen(core: core)
+            }
             .toolbar {
                 if let onDone {
                     ToolbarItem(placement: .topBarLeading) {
                         BackButton(label: core.hostName, action: onDone)
                     }
                 }
-                if !state.crashes.isEmpty {
-                    ToolbarItem(placement: .primaryAction) {
-                        Button("Clear All", role: .destructive) { confirmClear = true }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        if !state.crashes.isEmpty {
+                            Button("Clear All", role: .destructive) { confirmClear = true }
+                            Divider()
+                        }
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("LogSense Settings…", systemImage: "gearshape")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }

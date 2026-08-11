@@ -12,6 +12,7 @@ internal struct EventsScreen: View {
     @State private var tagScope: String?
     @State private var selected: StoredEvent?
     @State private var confirmClear = false
+    @State private var showSettings = false
 
     init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
@@ -97,16 +98,24 @@ internal struct EventsScreen: View {
                         BackButton(label: core.hostName, action: onDone)
                     }
                 }
-                if !state.events.isEmpty {
-                    ToolbarItem(placement: .primaryAction) {
-                        Menu {
+                ToolbarItem(placement: .primaryAction) {
+                    // Settings must stay reachable even with nothing captured, so the overflow
+                    // is always there; the event actions come and go with the events.
+                    Menu {
+                        if !state.events.isEmpty {
                             ShareLink(item: exportJson(displayed)) {
                                 Label("Share shown as JSON", systemImage: "square.and.arrow.up")
                             }
                             Button("Delete all", role: .destructive) { confirmClear = true }
-                        } label: {
-                            Image(systemName: "ellipsis.circle")
+                            Divider()
                         }
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("LogSense Settings…", systemImage: "gearshape")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
                 }
             }
@@ -119,6 +128,9 @@ internal struct EventsScreen: View {
             }
             .sheet(item: $selected) { event in
                 EventDetailSheet(event: event)
+            }
+            .navigationDestination(isPresented: $showSettings) {
+                SettingsScreen(core: core)
             }
         }
     }

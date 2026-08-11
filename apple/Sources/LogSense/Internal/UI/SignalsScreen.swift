@@ -11,6 +11,7 @@ internal struct SignalsScreen: View {
     @State private var categoryScope: SignalCategory?
     /// Muting hides existing hits too, like Android — everywhere, not just future matching.
     @State private var muted = Prefs.mutedSignals()
+    @State private var showSettings = false
 
     init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
@@ -54,6 +55,20 @@ internal struct SignalsScreen: View {
                         BackButton(label: core.hostName, action: onDone)
                     }
                 }
+                ToolbarItem(placement: .primaryAction) {
+                    Menu {
+                        Button {
+                            showSettings = true
+                        } label: {
+                            Label("LogSense Settings…", systemImage: "gearshape")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                }
+            }
+            .navigationDestination(isPresented: $showSettings) {
+                SettingsScreen(core: core)
             }
         }
     }
