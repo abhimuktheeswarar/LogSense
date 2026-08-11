@@ -992,7 +992,7 @@ private struct TabFormSheet: View {
                             .multilineTextAlignment(.trailing)
                     }
                     LabeledContent("Filter") {
-                        TextField("tag:PaymentSDK upi", text: $draft.query)
+                        TextField("tag:Network timeout", text: $draft.query)
                             .multilineTextAlignment(.trailing)
                             .font(.system(size: 14, design: .monospaced))
                             .autocorrectionDisabled()
