@@ -1276,10 +1276,10 @@ private struct CompactRow: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        // Compact never wraps; the toggle picks truncate vs horizontal scroll. Scrolling moves
-        // the WHOLE line (the ENTRY reading): pinning time+tag would leave the message a
-        // sliver of the viewport, and the truncated tag could never be revealed. Truncate mode
-        // keeps the fixed tag column so rows stay tabular.
+        // Android's tested rule, compact included: wrap ON really wraps the message across
+        // lines; wrap OFF scrolls the WHOLE line horizontally (the ENTRY reading — pinning
+        // time+tag would leave the message a sliver of the viewport, and the truncated tag
+        // could never be revealed). Wrapped keeps the fixed tag column so rows stay tabular.
         LineScrollable(wrap: wrap) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(Format.time(entry.timeMs))
@@ -1293,7 +1293,7 @@ private struct CompactRow: View {
                     .frame(maxWidth: wrap ? 96 : nil, alignment: .leading)
                 Text(Format.rowDisplay(entry.message))
                     .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
-                    .lineLimit(1)
+                    .lineLimit(wrap ? nil : 1)
                 Spacer(minLength: 0)
             }
         }
