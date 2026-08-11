@@ -474,7 +474,7 @@ internal struct LogsScreen: View {
                         Button {
                             showSettings = true
                         } label: {
-                            Label("LogSense Settings…", systemImage: "gearshape")
+                            Label("Settings…", systemImage: "gearshape")
                         }
                     } label: {
                         Image(systemName: "ellipsis")
