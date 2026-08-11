@@ -40,30 +40,54 @@ root URL, not a subpath.
 
 SPM has no per-build-configuration dependencies — Android's `debugImplementation` /
 `releaseImplementation` split has no SPM equivalent — so the debug fence lives at the call site.
-Keep every LogSense call in **one file**, with a no-op stub in the `#else`; that stub is the
-release "artifact":
+**Add one new file to your app target** — call it `LogSenseSetup.swift` — and keep every
+LogSense call in it, with a no-op stub in the `#else`; that stub is the release "artifact":
 
 ```swift
+// LogSenseSetup.swift — the only file in the app that touches LogSense.
 #if DEBUG
 import LogSense
 
-enum LogTools {
+enum LogSenseSetup {
     static func start() {
         var config = LogSenseConfig()
-        config.analyticsTagPatterns = ["Analytics": nil]   // see Analytics events below
+        config.analyticsTagPatterns = [
+            // nil = the built-in parser handles this tag's lines (see Analytics events below).
+            "Analytics": nil,
+            // A regex captures only matching lines — for SDKs the parser can't infer, or an
+            // app-level dispatcher that mirrors every SDK's events through one logger. This
+            // example matches lines like `[MyApp] [CRM] event name = purchase , payload = {…}`;
+            // the (?<tag>…) group splits the one log tag into per-SDK event tags. Dispatchers
+            // that log via bare os_log()/NSLog carry the binary's name as their log tag, hence
+            // the processName key.
+            ProcessInfo.processInfo.processName:
+                #"\[MyApp\] \[(?<tag>Analytics|CRM)\] event name =\s+(?<name>\S+)\s*,\s*payload = (?<params>\{[\s\S]*)"#,
+        ]
         LogSense.start(config)
     }
 }
 #else
-enum LogTools { static func start() {} }
+enum LogSenseSetup { static func start() {} }
 #endif
 ```
 
-Call `LogTools.start()` at the **top of** `application(_:didFinishLaunchingWithOptions:)` (or
-your `App` init), **before any crash-reporting SDK configures**. Crash reporters chain to
-whatever exception handler is already installed — starting LogSense first means both fire;
-second also works (LogSense chains the same way), but first is the ordering that never
-surprises anyone.
+**Where to call it** — the first thing in your app's launch path, **before any crash-reporting
+SDK configures** (crash reporters chain to whatever exception handler is already installed —
+starting LogSense first means both fire; second also works, but first never surprises anyone):
+
+- **UIKit lifecycle**: in `AppDelegate.swift`, at the top of
+  `application(_:didFinishLaunchingWithOptions:)`:
+
+  ```swift
+  func application(_ application: UIApplication,
+                   didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+      LogSenseSetup.start()
+      // FirebaseApp.configure() / your crash reporter / the rest of launch…
+      return true
+  }
+  ```
+
+- **SwiftUI lifecycle**: in the `init()` of your `@main struct MyApp: App`.
 
 Because the package links statically and release builds contain no references to its symbols,
 dead-code stripping removes LogSense from release binaries entirely — zero bytes ship.
@@ -74,10 +98,24 @@ iOS allows exactly one Home Screen icon per app, so Android's second-launcher-ic
 equivalent. The entry points, closest-first:
 
 - **Long-press the app icon** → the "Open LogSense" quick action (registered automatically).
-  iOS delivers the tap to *your* scene delegate; forward it with one line:
-  `if LogSense.handleShortcut(item) { completionHandler(true); return }`.
+  iOS delivers the tap to *your* scene delegate — in the class implementing
+  `UIWindowSceneDelegate` (typically `SceneDelegate.swift`), forward it from
+  `windowScene(_:performActionFor:completionHandler:)`:
+
+  ```swift
+  func windowScene(_ windowScene: UIWindowScene,
+                   performActionFor shortcutItem: UIApplicationShortcutItem,
+                   completionHandler: @escaping (Bool) -> Void) {
+      if LogSense.handleShortcut(shortcutItem) { completionHandler(true); return }
+      // your own shortcuts…
+  }
+  ```
+
+  (Wrap the LogSense line in `#if DEBUG` — or route it through `LogSenseSetup` — like every
+  other call site.)
 - **Crash notification tap** deep-links to the report list. If your app sets its own
-  `UNUserNotificationCenter` delegate, forward with one line:
+  `UNUserNotificationCenter` delegate, forward from that class's
+  `userNotificationCenter(_:didReceive:withCompletionHandler:)` with one line:
   `if LogSense.handleNotificationResponse(response) { completionHandler(); return }`.
   If your app sets **no** delegate, LogSense claims the vacant slot itself — zero code.
 - **Programmatic**: `LogSense.present()` (its own overlay window above your app), or embed
@@ -121,9 +159,24 @@ recording, Open) are App Intents that work without unlocking the phone.
 ActivityKit requires Live Activity UI to live in a **widget extension owned by the host app** —
 a Swift package cannot ship an app extension, so no library can enable this for you. Two steps:
 
-1. App target: `NSSupportsLiveActivities = YES`.
-2. Your widget bundle: add `LogSenseLiveActivity()` — one line (behind the same `#if DEBUG`
-   fence); create a widget extension if you don't have one.
+1. App target: `NSSupportsLiveActivities = YES` (Info.plist, or the
+   `INFOPLIST_KEY_NSSupportsLiveActivities` build setting).
+2. In your widget extension target, find the `@main struct … : WidgetBundle` (the file Xcode
+   names `<YourApp>Widgets.swift` when it creates the extension) and add one line to its body —
+   create a widget extension first if you don't have one (File ▸ New ▸ Target ▸ Widget
+   Extension):
+
+   ```swift
+   @main
+   struct MyAppWidgets: WidgetBundle {
+       var body: some Widget {
+           MyExistingWidget()
+           #if DEBUG
+           LogSenseLiveActivity()   // add `import LogSense` under the same fence
+           #endif
+       }
+   }
+   ```
 
 Without the extension, everything else works — the activity simply never appears. QA can switch
 it off under Settings → Live Activity; when the host doesn't enable it, the toggle shows
