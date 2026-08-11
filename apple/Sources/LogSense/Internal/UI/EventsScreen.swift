@@ -237,17 +237,17 @@ private struct EventRow: View {
 private struct TagChip: View {
     let tag: String
     let dimmed: Bool
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        // Same stable per-tag hue as the log rows, so a source keeps one color everywhere.
+        let color = dimmed ? Color(.systemGray) : TagColor.color(for: tag, scheme: scheme)
         Text(tag)
             .font(.system(size: 10, weight: .semibold, design: .monospaced))
             .padding(.horizontal, 6)
             .padding(.vertical, 2)
-            .background(
-                (dimmed ? Color(.systemGray) : Color(hex: 0x64D2FF)).opacity(0.16),
-                in: RoundedRectangle(cornerRadius: 5)
-            )
-            .foregroundStyle(dimmed ? Color.secondary : Color(hex: 0x64D2FF))
+            .background(color.opacity(0.16), in: RoundedRectangle(cornerRadius: 5))
+            .foregroundStyle(dimmed ? Color.secondary : color)
     }
 }
 

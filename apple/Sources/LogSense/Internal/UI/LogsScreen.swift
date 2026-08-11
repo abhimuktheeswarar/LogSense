@@ -1080,7 +1080,9 @@ private struct StandardRow: View {
                 HStack(spacing: 9) {
                     Text(Format.time(entry.timeMs))
                     Text(entry.tag)
-                        .foregroundStyle(.secondary)
+                        // Android's tested rule: a stable hue per tag, so interleaved
+                        // sources read apart at a glance; severity stays on the chip.
+                        .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     if let hit {
@@ -1131,7 +1133,7 @@ private struct PadRow: View {
                 .background(entry.level.chipFill(scheme), in: RoundedRectangle(cornerRadius: 6))
             Text(entry.tag)
                 .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
                 .lineLimit(1)
                 .frame(width: 92, alignment: .leading)
             LineScrollable(wrap: wrap) {
