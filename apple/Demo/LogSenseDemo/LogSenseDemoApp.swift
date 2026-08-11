@@ -6,7 +6,7 @@ struct LogSenseDemoApp: App {
 
     init() {
         #if DEBUG
-        LogSense.start(LogSenseConfig(
+        var config = LogSenseConfig(
             analyticsTagPatterns: [
                 // Built-in parser handles this tag's shapes.
                 "Analytics": nil,
@@ -16,7 +16,12 @@ struct LogSenseDemoApp: App {
                 "Metrics": nil,
             ],
             customSignals: ["Demo trouble": "tag:Demo msg:trouble"]
-        ))
+        )
+        // Screenshot runs: the activity's own update chatter would bury the showcase lines.
+        if ProcessInfo.processInfo.environment["LOGSENSE_SEED"] == "1" {
+            config.showLiveActivity = false
+        }
+        LogSense.start(config)
         #endif
     }
 

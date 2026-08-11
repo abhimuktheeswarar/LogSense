@@ -84,7 +84,7 @@ struct ContentView: View {
                         analytics.info(#"purchase {"sku":"pro","price":9.99}"#)
                     }
                     Button("Arrow + Swift dict shape") {
-                        analytics.info(#"logEvent = seat_selected -> ["seat": "L4", "fare": 849]"#)
+                        analytics.info(#"logEvent = plan_upgraded -> ["plan": "pro", "period": "annual"]"#)
                     }
                     Button("Telemetry tag (regex-matched)") {
                         telemetry.info("logEvent = checkout_started -> {cart=3, total=1499}")
@@ -144,6 +144,7 @@ struct ContentView: View {
             logger.error("Demo trouble: payment declined")
             logger.error("Unable to simultaneously satisfy constraints.")
         }
+        if ProcessInfo.processInfo.environment["LOGSENSE_SEED"] == "1" { emitShowcase() }
         if ProcessInfo.processInfo.environment["LOGSENSE_AUTO_OPEN"] == "1" {
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { LogSense.present() }
         }
@@ -153,6 +154,54 @@ struct ContentView: View {
                 NSException(name: .invalidArgumentException,
                             reason: "LogSense scripted demo crash",
                             userInfo: nil).raise()
+            }
+        }
+    }
+
+    /// LOGSENSE_SEED=1: a realistic session's worth of traffic — several subsystem tags so the
+    /// per-tag colors show, every level, analytics across all configured tags with rich params,
+    /// and a couple of signal lines. Exists so screenshots look like a real app, not filler.
+    private func emitShowcase() {
+        let network = Logger(subsystem: "com.msabhi.logsense.demo", category: "Network")
+        let auth = Logger(subsystem: "com.msabhi.logsense.demo", category: "Auth")
+        let cache = Logger(subsystem: "com.msabhi.logsense.demo", category: "Cache")
+        let router = Logger(subsystem: "com.msabhi.logsense.demo", category: "Router")
+        let sync = Logger(subsystem: "com.msabhi.logsense.demo", category: "Sync")
+
+        auth.info("session restored for user_284 (expires in 41m)")
+        cache.debug("hit: catalog/home.json (age 38s, 214KB)")
+        network.info("GET /v2/catalog/home -> 200 in 142ms (2.1KB gzip)")
+        router.notice("deep link: app://offers/summer -> OffersScreen")
+        network.debug("prefetch: 6 product images queued")
+        sync.info("delta sync: 18 records in 96ms")
+        network.error("GET /v2/recommendations -> 503 in 2841ms (retry 1/3, backoff 800ms)")
+        cache.notice("evicted 3 entries (memory pressure, freed 1.2MB)")
+        auth.debug("access token refresh scheduled at 14:32")
+        network.info("GET /v2/recommendations -> 200 in 204ms (retry succeeded)")
+        router.info("push: CheckoutScreen (cart: 3 items)")
+        sync.notice("conflict on record note_9214 resolved: server wins")
+
+        analytics.info("screen_view screen=Offers, source=deeplink")
+        analytics.info("add_to_cart Bundle[{item_id=8143, title=Desk Lamp, qty=1, price=39.99}]")
+        analytics.info(#"purchase {"order_id":"ORD-58312","total":127.5,"currency":"USD","items":3,"payment":"card"}"#)
+        telemetry.info("logEvent = checkout_started -> {cart=3, total=127.5, coupon=WELCOME10}")
+        telemetry.info("logEvent = search_performed -> {query=desk lamp, results=24, latency_ms=118}")
+        metrics.info("screen_render screen=Offers, ms=96")
+        metrics.info("cold_start phase=first_frame, ms=412")
+
+        // A second and third wave so the showcase is still the newest content when a scripted
+        // screenshot lands, rather than whatever system chatter followed launch.
+        for (delay, wave) in [(6.0, 1), (12.0, 2)] {
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+                network.info("GET /v2/cart -> 200 in 88ms (wave \(wave))")
+                auth.info("token refreshed (rotated, expires in 60m)")
+                cache.debug("hit: profile/user_284.json (age 4s)")
+                network.fault("TLS handshake failed for cdn-fallback (self-signed leaf)")
+                logger.error("Demo trouble: payment declined")
+                router.notice("restored navigation stack: 3 screens")
+                analytics.info("screen_view screen=Checkout, source=push")
+                metrics.info("frame_drop screen=Checkout, dropped=7")
+                sync.info("uploaded 2 pending changes in 143ms")
             }
         }
     }
