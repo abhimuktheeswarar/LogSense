@@ -322,6 +322,14 @@ internal final class LogSenseCore {
         #if os(iOS)
         syncLiveActivity()
         #endif
+        // Capture health beside the sessions: when the store yields nothing, this says why —
+        // a capture that is silently blind can't be debugged from the outside.
+        if let store = sessionStore {
+            try? logReader.health.write(
+                to: store.root.appendingPathComponent("capture-health.txt"),
+                atomically: true, encoding: .utf8
+            )
+        }
         return !batch.isEmpty
     }
 

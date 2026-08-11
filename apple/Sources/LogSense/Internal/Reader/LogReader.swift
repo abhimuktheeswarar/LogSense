@@ -16,8 +16,22 @@ internal final class LogReader {
     /// Fingerprints of the entries carrying `newestDate`, the only ambiguous boundary.
     private var boundarySeen: Set<Int> = []
 
+    /// Capture health, updated every poll — a capture that silently sees nothing is a bug
+    /// that can't be reported; these counters make the failure mode visible (diagnostics
+    /// file, future UI). Written and read on the poll thread only.
+    private(set) var polls = 0
+    private(set) var entriesDelivered = 0
+    private(set) var lastError: String?
+
     func poll() -> [LogEntry] {
-        guard let store = try? OSLogStore(scope: .currentProcessIdentifier) else { return [] }
+        polls += 1
+        let store: OSLogStore
+        do {
+            store = try OSLogStore(scope: .currentProcessIdentifier)
+        } catch {
+            lastError = "store init: \(error)"
+            return []
+        }
         let entries: AnySequence<OSLogEntry>
         do {
             if let newestDate {
@@ -36,8 +50,13 @@ internal final class LogReader {
             }
         } catch {
             // A store that rejects the predicate still tails fine the expensive way.
-            guard let all = try? store.getEntries() else { return [] }
-            entries = all
+            lastError = "getEntries: \(error)"
+            do {
+                entries = try store.getEntries()
+            } catch {
+                lastError = "getEntries fallback: \(error)"
+                return []
+            }
         }
 
         var out: [LogEntry] = []
@@ -64,7 +83,13 @@ internal final class LogReader {
                 boundarySeen = batchBoundary
             }
         }
+        entriesDelivered += out.count
         return out
+    }
+
+    /// One-line health summary for the diagnostics file.
+    var health: String {
+        "polls=\(polls) entries=\(entriesDelivered) newest=\(newestDate.map { Format.time(Int64($0.timeIntervalSince1970 * 1000)) } ?? "nil") lastError=\(lastError ?? "none")"
     }
 
     private func fingerprint(_ log: OSLogEntryLog) -> Int {
