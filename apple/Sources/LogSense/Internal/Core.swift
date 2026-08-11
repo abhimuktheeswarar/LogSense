@@ -9,16 +9,21 @@ internal enum CaptureStatus {
     case waiting, live, paused
 }
 
-/// The UI-facing state, published on the main actor at the poll cadence (~1 Hz) — the poll cadence
-/// *is* the publish cadence, so there is no separate flush loop to tune.
+/// The high-churn log feed, split from `LogSenseState` on purpose: `snapshot` republishes at
+/// the poll cadence, and ObservableObject invalidation is object-granular — every screen
+/// observing the shared state would re-evaluate per publish. Only LogsScreen observes this.
 @MainActor
-internal final class LogSenseState: ObservableObject {
+internal final class LogsFeed: ObservableObject {
     @Published var snapshot: [LogEntry] = []
     @Published var totalReceived = 0
-    @Published var status: CaptureStatus = .waiting
     @Published var bufferedWhilePaused = 0
     /// When paused, the wall-clock time of the newest published line ("Stream frozen at …").
     @Published var frozenAtMs: Int64 = 0
+}
+
+@MainActor
+internal final class LogSenseState: ObservableObject {
+    @Published var status: CaptureStatus = .waiting
     /// Stored crash reports, newest first, across sessions.
     @Published var crashes: [StoredCrash] = []
     /// Read crash reports (by `StoredCrash.readKey`); the tab badge counts the rest.
@@ -49,6 +54,7 @@ internal final class LogSenseCore {
     let bufferLimit: Int
     let buffer: LogBuffer
     let state: LogSenseState
+    let feed: LogsFeed
     let hostName: String
     /// The host executable's name — what its frames carry in a stack trace.
     let appBinary: String
@@ -96,6 +102,7 @@ internal final class LogSenseCore {
         self.bufferLimit = Self.ramAwareBufferLimit(config.maxBufferedLines)
         self.buffer = LogBuffer(maxLines: bufferLimit, maxBytes: config.maxBufferedBytes)
         self.state = LogSenseState()
+        self.feed = LogsFeed()
         self.hostName = Bundle.main.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String
             ?? Bundle.main.object(forInfoDictionaryKey: kCFBundleNameKey as String) as? String
             ?? ProcessInfo.processInfo.processName
@@ -448,8 +455,8 @@ internal final class LogSenseCore {
         buffer.clear()
         signals.clear()
         lastPublishedTotal = 0
-        state.snapshot = []
-        state.totalReceived = 0
+        feed.snapshot = []
+        feed.totalReceived = 0
     }
 
     /// Clears the crash takeover — the activity (and any future one) returns to blue.
@@ -495,16 +502,16 @@ internal final class LogSenseCore {
         }
         guard visible, !paused else { return }
         // Catch up immediately — the next poll may be seconds away on the stretched cadence.
-        state.snapshot = buffer.currentSnapshot()
-        state.totalReceived = buffer.totalReceived
-        if state.status == .waiting && state.totalReceived > 0 { state.status = .live }
+        feed.snapshot = buffer.currentSnapshot()
+        feed.totalReceived = buffer.totalReceived
+        if state.status == .waiting && feed.totalReceived > 0 { state.status = .live }
     }
 
     private func publishIfNeeded() {
         let total = buffer.totalReceived
         if paused {
             Task { @MainActor [state] in
-                state.bufferedWhilePaused = max(0, total - state.totalReceived)
+                feed.bufferedWhilePaused = max(0, total - feed.totalReceived)
             }
             return
         }
@@ -513,14 +520,14 @@ internal final class LogSenseCore {
         guard let snapshot = buffer.flush() else {
             // Nothing new; still promote waiting → live once anything has arrived.
             Task { @MainActor [state] in
-                if state.status == .waiting && state.totalReceived > 0 { state.status = .live }
+                if state.status == .waiting && feed.totalReceived > 0 { state.status = .live }
             }
             return
         }
         lastPublishedTotal = total
         Task { @MainActor [state] in
-            state.snapshot = snapshot
-            state.totalReceived = total
+            feed.snapshot = snapshot
+            feed.totalReceived = total
             if state.status == .waiting { state.status = .live }
         }
     }
@@ -529,8 +536,8 @@ internal final class LogSenseCore {
     func pause() {
         paused = true
         state.status = .paused
-        state.frozenAtMs = state.snapshot.last?.timeMs ?? Int64(Date().timeIntervalSince1970 * 1000)
-        state.bufferedWhilePaused = 0
+        feed.frozenAtMs = feed.snapshot.last?.timeMs ?? Int64(Date().timeIntervalSince1970 * 1000)
+        feed.bufferedWhilePaused = 0
         #if os(iOS)
         syncLiveActivity(immediate: true)
         #endif
@@ -540,10 +547,10 @@ internal final class LogSenseCore {
     func resume() {
         paused = false
         state.status = .live
-        state.bufferedWhilePaused = 0
+        feed.bufferedWhilePaused = 0
         if let snapshot = buffer.flush() {
-            state.snapshot = snapshot
-            state.totalReceived = buffer.totalReceived
+            feed.snapshot = snapshot
+            feed.totalReceived = buffer.totalReceived
             lastPublishedTotal = buffer.totalReceived
         }
         #if os(iOS)

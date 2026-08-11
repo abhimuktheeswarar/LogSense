@@ -9,6 +9,7 @@ internal struct LogsScreen: View {
     let onDone: (() -> Void)?
 
     @ObservedObject private var state: LogSenseState
+    @ObservedObject private var feed: LogsFeed
     @Environment(\.colorScheme) private var scheme
     @Environment(\.horizontalSizeClass) private var hSize
 
@@ -64,12 +65,13 @@ internal struct LogsScreen: View {
         self.core = core
         self.onDone = onDone
         self.state = core.state
+        self.feed = core.feed
     }
 
     // ponytail: filtering re-runs on each ~1 Hz publish over the whole buffer. Fine at real
     // volumes for a debug tool; move off-main behind a task if it ever shows in a profile.
     private func filteredRows(minLevel: LogLevel, query: String) -> [LogEntry] {
-        let visible = state.snapshot
+        let visible = feed.snapshot
         if query.isEmpty && minLevel == .debug { return visible }
         let predicate = LogQuery.compile(LogFilter(minLevel: minLevel, query: query))
         return visible.filter(predicate)
@@ -167,7 +169,7 @@ internal struct LogsScreen: View {
             selectTab(0)
             autoscroll = false
             revealTarget = id
-            if let entry = state.snapshot.first(where: { $0.id == id }) {
+            if let entry = feed.snapshot.first(where: { $0.id == id }) {
                 selectedEntry = entry
             }
         }
@@ -532,14 +534,14 @@ internal struct LogsScreen: View {
                     let recording = tabs.count - tabs.filter { pausedTabs.contains($0.id) }.count
                     Text("· \(recording) of \(tabs.count) tabs recording")
                 } else if isFiltering {
-                    Text("· \(rows.count.formatted()) of \(state.snapshot.count.formatted()) in “\(activeTabName)”")
+                    Text("· \(rows.count.formatted()) of \(feed.snapshot.count.formatted()) in “\(activeTabName)”")
                 } else {
-                    Text("· \(state.totalReceived.formatted()) lines")
+                    Text("· \(feed.totalReceived.formatted()) lines")
                 }
             case .paused:
                 dot(.orange, pulsing: false)
                 Text("Paused").foregroundStyle(.orange).fontWeight(.semibold)
-                Text("· \(state.snapshot.count.formatted()) lines · \(state.bufferedWhilePaused.formatted()) buffered")
+                Text("· \(feed.snapshot.count.formatted()) lines · \(feed.bufferedWhilePaused.formatted()) buffered")
             }
         }
         .font(.system(size: 12.5, weight: .medium))
