@@ -126,18 +126,26 @@ internal struct LogsScreen: View {
         return out
     }
 
+    /// SwiftUI's List re-diffs every identified row on each publish — at the 50k buffer cap
+    /// that alone is the lag. Rendering is windowed to the newest rows; the full buffer still
+    /// feeds the status counts, filter, find, export and crash context, and filtering or
+    /// finding always sees its whole result set.
+    private static let renderWindow = 2_000
+
     var body: some View {
-        let rows = displayed
+        let all = displayed
         let matches = matchIds
+        let windowed = !isFiltering && !findActive && all.count > Self.renderWindow
+        let rows = windowed ? Array(all.suffix(Self.renderWindow)) : all
         NavigationStack {
             VStack(spacing: 0) {
-                header(rows: rows)
+                header(rows: all)
                 tabsRow
                 filterBand
                 if DebuggerState.logsDiverted { debuggerBanner.padding(.top, 8) }
                 if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                 if state.status == .paused { pausedBanner.padding(.top, 8) }
-                content(rows: rows, matches: matches)
+                content(rows: rows, hiddenOlder: all.count - rows.count, matches: matches)
             }
             // The custom header replaces the bar visually, but the title still feeds the pushed
             // screen's "‹ Logs" back item — continuing the task pushes, per the design.
@@ -695,7 +703,7 @@ internal struct LogsScreen: View {
     // MARK: content
 
     @ViewBuilder
-    private func content(rows: [LogEntry], matches: [Int64]) -> some View {
+    private func content(rows: [LogEntry], hiddenOlder: Int, matches: [Int64]) -> some View {
         if rows.isEmpty {
             emptyState(rows: rows).frame(maxHeight: .infinity)
         } else {
@@ -703,6 +711,16 @@ internal struct LogsScreen: View {
             HStack(spacing: 0) {
                 ScrollViewReader { proxy in
                     List {
+                        if hiddenOlder > 0 {
+                            Text("Latest \(rows.count.formatted()) shown · \(hiddenOlder.formatted()) older lines stay in the buffer — filter to search them")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(.secondary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 6)
+                                .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
+                                .listRowSeparator(.hidden)
+                                .listRowBackground(Color.clear)
+                        }
                         ForEach(rows) { entry in
                             row(entry, hit: hits[entry.id])
                                 .id(entry.id)
