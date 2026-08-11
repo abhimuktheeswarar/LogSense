@@ -168,7 +168,11 @@ internal final class LogSenseCore {
                 let elapsed = DispatchTime.now().uptimeNanoseconds - started
                 quietPolls = sawLines ? 0 : quietPolls + 1
                 let idleStretch = LogSenseCore.pollIntervalNs * UInt64(min(5, 1 + quietPolls))
-                let backoff = min(max(idleStretch, elapsed * 2), 5_000_000_000)
+                // Nobody watching → poll lazily (quarter duty); UI open → stay responsive
+                // (half duty). In a host whose store makes every poll cost ~1s, this is the
+                // difference between a visible burden and background noise.
+                let duty: UInt64 = self?.uiVisible == true ? 2 : 4
+                let backoff = min(max(idleStretch, elapsed * duty), 5_000_000_000)
                 try? await Task.sleep(nanoseconds: backoff)
             }
         }
