@@ -15,8 +15,17 @@ internal enum DebuggerState {
 
     /// `IDEPreferLogStreaming=YES` in the Run scheme makes the IDE subscribe to the log store
     /// instead of taking the direct pipe — entries then reach both the IDE console and the
-    /// store, so capture keeps working under the debugger. Diversion is only in effect when
-    /// a debugger is attached and that variable is absent.
-    static let logsDiverted: Bool = isAttached
-        && ProcessInfo.processInfo.environment["IDEPreferLogStreaming"]?.uppercased() != "YES"
+    /// store, so capture keeps working under the debugger. The IDE consumes that variable
+    /// itself; what the child process actually sees (verified) is
+    /// `IDE_DISABLED_OS_ACTIVITY_DT_MODE=1` when the pipe is off, or `OS_ACTIVITY_DT_MODE`
+    /// truthy when the diversion is on.
+    static let logsDiverted: Bool = {
+        guard isAttached else { return false }
+        let env = ProcessInfo.processInfo.environment
+        if env["IDE_DISABLED_OS_ACTIVITY_DT_MODE"] != nil { return false }
+        if let mode = env["OS_ACTIVITY_DT_MODE"], mode != "0", mode.uppercased() != "NO" {
+            return true
+        }
+        return env["IDEPreferLogStreaming"]?.uppercased() != "YES"
+    }()
 }
