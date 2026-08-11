@@ -292,14 +292,6 @@ private struct EventDetailSheet: View {
                         .padding(13)
                         .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
 
-                    sectionTitle("Raw log line")
-                    Text(event.record.raw)
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(13)
-                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-
                     Button {
                         UIPasteboard.general.string = eventJson
                     } label: {
@@ -309,7 +301,15 @@ private struct EventDetailSheet: View {
                             .padding(.vertical, 12)
                             .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 13))
                     }
-                    .padding(.top, 18)
+                    .padding(.top, 12)
+
+                    sectionTitle("Raw log line")
+                    Text(event.record.raw)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(13)
+                        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
                 }
                 .padding(16)
             }
