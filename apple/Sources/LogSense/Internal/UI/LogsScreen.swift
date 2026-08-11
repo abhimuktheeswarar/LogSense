@@ -1276,23 +1276,26 @@ private struct CompactRow: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(Format.time(entry.timeMs))
-                .foregroundStyle(.tertiary)
-            Text(String(entry.level.letter))
-                .fontWeight(.bold)
-                .foregroundStyle(entry.level.color(scheme))
-            Text(entry.tag)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: 96, alignment: .leading)
-            // Compact never wraps; the toggle picks truncate vs horizontal scroll.
-            LineScrollable(wrap: wrap) {
+        // Compact never wraps; the toggle picks truncate vs horizontal scroll. Scrolling moves
+        // the WHOLE line (the ENTRY reading): pinning time+tag would leave the message a
+        // sliver of the viewport, and the truncated tag could never be revealed. Truncate mode
+        // keeps the fixed tag column so rows stay tabular.
+        LineScrollable(wrap: wrap) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(Format.time(entry.timeMs))
+                    .foregroundStyle(.tertiary)
+                Text(String(entry.level.letter))
+                    .fontWeight(.bold)
+                    .foregroundStyle(entry.level.color(scheme))
+                Text(entry.tag)
+                    .foregroundStyle(TagColor.color(for: entry.tag, scheme: scheme))
+                    .lineLimit(1)
+                    .frame(maxWidth: wrap ? 96 : nil, alignment: .leading)
                 Text(Format.rowDisplay(entry.message))
                     .foregroundStyle(entry.level >= .error ? entry.level.color(scheme) : Color.primary)
                     .lineLimit(1)
+                Spacer(minLength: 0)
             }
-            Spacer(minLength: 0)
         }
         .font(.system(size: 11.5, design: .monospaced))
         .padding(.horizontal, 14)
