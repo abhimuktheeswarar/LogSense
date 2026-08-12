@@ -1407,6 +1407,14 @@ internal struct EmptyStateView: View {
 /// those lines; say so, or a quiet stream reads as LogSense being broken. Shown when the
 /// debugger is visibly attached OR the store has provably returned nothing (`storeSilent`).
 internal struct DivertedStreamCard: View {
+    // The simulator's logd can stay diverted for the whole boot after one Xcode run — an
+    // icon relaunch alone doesn't recover it, so the simulator copy names the real fix.
+    #if targetEnvironment(simulator)
+    private static let silentCopy = "Nothing from this app is reaching the system log store — a run launched from Xcode diverts the stream even without the debugger. Build (⌘B), then launch from the app icon. If this card stays after an icon launch, reboot the simulator."
+    #else
+    private static let silentCopy = "Nothing from this app is reaching the system log store — a run launched from Xcode diverts the stream even without the debugger. Build (⌘B), then launch from the app icon for full capture."
+    #endif
+
     var body: some View {
         let attached = DebuggerState.logsDiverted
         HStack(spacing: 10) {
@@ -1417,7 +1425,7 @@ internal struct DivertedStreamCard: View {
                     .foregroundStyle(.blue)
                 Text(attached
                      ? "The OS hands this app's log stream to the debugger, so only print() output lands here. Stop the debug session and launch from the app icon for full capture."
-                     : "Nothing from this app is reaching the system log store — a run launched from Xcode diverts the stream even without the debugger. Build (⌘B), then launch from the app icon for full capture.")
+                     : Self.silentCopy)
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
