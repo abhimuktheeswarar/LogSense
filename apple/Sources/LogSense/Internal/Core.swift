@@ -330,9 +330,12 @@ internal final class LogSenseCore {
 
     @discardableResult
     private func pollOnce() -> Bool {
-        let batch = logReader.poll()
-        if !batch.isEmpty {
-            onBatch(buffer.append(batch))
+        // Publishing per chunk lets a long backlog walk fill the screen while it runs
+        // instead of after — with the UI hidden publishIfNeeded skips, so no idle cost.
+        let delivered = logReader.poll { [weak self] chunk in
+            guard let self else { return }
+            self.onBatch(self.buffer.append(chunk))
+            self.publishIfNeeded()
         }
         publishIfNeeded()
         #if os(iOS)
@@ -352,7 +355,7 @@ internal final class LogSenseCore {
             storeSilentSeen = silent
             Task { @MainActor [weak self] in self?.state.storeSilent = silent }
         }
-        return !batch.isEmpty
+        return delivered > 0
     }
 
     /// Poll-thread mirror of `state.storeSilent`, so the main actor is only touched on change.

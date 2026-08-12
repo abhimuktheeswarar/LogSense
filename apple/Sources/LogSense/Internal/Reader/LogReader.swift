@@ -31,7 +31,11 @@ internal final class LogReader {
     private var cachedStore: OSLogStore?
     private var lastPollDelivered = false
 
-    func poll() -> [LogEntry] {
+    /// Delivering in chunks instead of returning one array keeps a big backlog walk from
+    /// holding the screen empty for its whole duration: materializing entries costs ~1ms each,
+    /// so a chatty host's first poll runs for seconds — the first chunk puts lines on screen
+    /// while the walk is still going. Returns the total entry count delivered.
+    func poll(deliver: ([LogEntry]) -> Void) -> Int {
         polls += 1
         let store: OSLogStore
         if let cached = cachedStore, lastPollDelivered {
@@ -41,7 +45,7 @@ internal final class LogReader {
                 store = try OSLogStore(scope: .currentProcessIdentifier)
             } catch {
                 lastError = "store init: \(error)"
-                return []
+                return 0
             }
             cachedStore = store
         }
@@ -68,11 +72,12 @@ internal final class LogReader {
                 entries = try store.getEntries()
             } catch {
                 lastError = "getEntries fallback: \(error)"
-                return []
+                return 0
             }
         }
 
         var out: [LogEntry] = []
+        var total = 0
         var batchNewest = newestDate ?? .distantPast
         var batchBoundary: Set<Int> = []
         for case let log as OSLogEntryLog in entries {
@@ -87,8 +92,19 @@ internal final class LogReader {
                 batchBoundary.insert(fingerprint(log))
             }
             out.append(map(log))
+            // ~0.25s of materialization per chunk; dedupe state commits after the full walk,
+            // so entries handed out early have already passed it.
+            if out.count == 256 {
+                total += out.count
+                deliver(out)
+                out.removeAll(keepingCapacity: true)
+            }
         }
         if !out.isEmpty {
+            total += out.count
+            deliver(out)
+        }
+        if total > 0 {
             if batchNewest == newestDate {
                 boundarySeen.formUnion(batchBoundary)
             } else {
@@ -96,9 +112,9 @@ internal final class LogReader {
                 boundarySeen = batchBoundary
             }
         }
-        entriesDelivered += out.count
-        lastPollDelivered = !out.isEmpty
-        return out
+        entriesDelivered += total
+        lastPollDelivered = total > 0
+        return total
     }
 
     /// One-line health summary for the diagnostics file.
