@@ -190,7 +190,11 @@ internal final class LogSenseCore {
                 // (half duty). In a host whose store makes every poll cost ~1s, this is the
                 // difference between a visible burden and background noise.
                 let duty: UInt64 = self?.uiVisible == true ? 2 : 4
-                var backoff = min(max(idleStretch, elapsed * duty), 5_000_000_000)
+                // The long sleep cap protects a host nobody is watching; with the overlay up
+                // it just reads as a stall (measured: launch-storm polls cost seconds, so the
+                // capped sleep decides how stale the screen feels between them).
+                let cap: UInt64 = self?.uiVisible == true ? 2_000_000_000 : 5_000_000_000
+                var backoff = min(max(idleStretch, elapsed * duty), cap)
                 // Someone staring at an empty screen is the one case the lazy cadence must
                 // not protect the host in: poll tight until the store either delivers or is
                 // diagnosed diverted — bounded, since one of the two happens within 5 polls.
