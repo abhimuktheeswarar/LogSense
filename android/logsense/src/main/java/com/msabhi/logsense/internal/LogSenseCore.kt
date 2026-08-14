@@ -17,8 +17,10 @@ import com.msabhi.logsense.internal.data.LogSenseDatabase
 import com.msabhi.logsense.internal.data.SessionEntity
 import com.msabhi.logsense.internal.notify.Notifications
 import com.msabhi.logsense.internal.prefs.LogSensePrefs
+import com.msabhi.logsense.internal.reader.AdbAttachment
 import com.msabhi.logsense.internal.reader.LogBuffer
 import com.msabhi.logsense.internal.reader.LogcatReader
+import com.msabhi.logsense.internal.reader.shouldRetainLine
 import com.msabhi.logsense.internal.signals.LifecycleSignals
 import com.msabhi.logsense.internal.signals.SignalDetector
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -87,11 +89,35 @@ internal class LogSenseCore private constructor(
      *  on low-RAM devices so LogSense never fills the host app's heap. Never raised above the config —
      *  spare RAM is not a reason to buffer more. */
     val bufferLimit = ramAwareBufferLimit(appContext, config.maxBufferedLines.coerceAtLeast(MIN_BUFFER_LINES))
-    val buffer = LogBuffer(bufferLimit)
     val prefs = LogSensePrefs(appContext)
 
+    /** Pinned = config's tags (locked) plus whatever the user pinned live from a line's sheet. */
+    val buffer = LogBuffer(bufferLimit) { config.pinnedTags + prefs.pinnedTags.value }
+
+    /** Live adb attachment, for desk mode ([LogSenseConfig.pauseLogsWhileAdbConnected]). */
+    val adbAttachment = AdbAttachment(appContext)
+
+    /** One-tap "Capture anyway" from the Logs tab — full retention despite the cable. */
+    val adbPauseOverride = MutableStateFlow(false)
+
+    /** Reader sessions whose resume overlap had vanished from logd — the lines in between
+     *  rotated out (or the device log was cleared). Honest signal, never silent loss. */
+    val logGapCount = MutableStateFlow(0)
+
+    /** The [logGapCount] value already surfaced as a snackbar; only newer gaps notify again. */
+    val logGapShownAt = MutableStateFlow(0)
+
+    /** True while desk mode is actually pausing line retention (drives the Logs tab notice). */
+    val logsPausedByAdb: Boolean
+        get() = config.pauseLogsWhileAdbConnected && adbAttachment.attached.value && !adbPauseOverride.value
+
+    /** True while LogSense's own activity is foreground — set by it; read by [signals] to keep
+     *  LogSense's own rendering jank out of the host's diagnostics. */
+    @Volatile
+    var uiVisible = false
+
     /** Catalog matching over the live stream. Hits are in-memory and point into [buffer]. */
-    val signals = SignalDetector(config) { prefs.mutedSignals.value }
+    val signals = SignalDetector(config, { prefs.mutedSignals.value }, { uiVisible })
 
     /** Set by the Signals tab to send the Logs tab to a line; cleared once the jump is consumed. */
     val jumpToLogId = MutableStateFlow<Long?>(null)
@@ -152,11 +178,14 @@ internal class LogSenseCore private constructor(
         startReader()
 
         // Publish buffered lines to observers at a bounded rate — the reader keeps ingesting every
-        // batch, but the UI re-renders at most ~10×/sec instead of once per batch under heavy logging.
+        // batch, but the UI re-renders at most ~10×/sec instead of once per batch under heavy
+        // logging. The cadence backs off as the buffer grows: each publish costs O(size) to
+        // materialize and recompose against, so a big buffer at 10 Hz pegs the host's main thread.
         scope.launch {
             while (isActive) {
-                delay(BUFFER_FLUSH_MS)
+                delay(maxOf(BUFFER_FLUSH_MS, buffer.approxSize / 50L))
                 buffer.flush()
+                signals.publish() // trailing edge of the hit-publication rate limit
             }
         }
 
@@ -218,7 +247,7 @@ internal class LogSenseCore private constructor(
                 while (isActive) {
                     delay(NOTIFICATION_REFRESH_MS)
                     if (!captureEnabled.value) continue
-                    val count = buffer.totalReceived.value
+                    val count = buffer.totalReceivedNow
                     if (count != last) {
                         Notifications.postCapture(appContext, paused = false, count = count)
                         last = count
@@ -240,6 +269,12 @@ internal class LogSenseCore private constructor(
                     guard("signal detection") { signals.process(batch) }
                 },
                 captureEnabled = captureEnabled,
+                pollMode = adbAttachment.adbPossible,
+                uiVisible = { uiVisible },
+                onPossibleGap = { logGapCount.value += 1 },
+                retainLine = { entry ->
+                    shouldRetainLine(logsPausedByAdb, config.pinnedTags, prefs.pinnedTags.value, entry.tag)
+                },
             ).run()
         }
     }
@@ -264,7 +299,7 @@ internal class LogSenseCore private constructor(
     fun setCaptureEnabled(enabled: Boolean) {
         captureEnabled.value = enabled
         if (config.showNotification) {
-            Notifications.postCapture(appContext, paused = !enabled, count = buffer.totalReceived.value)
+            Notifications.postCapture(appContext, paused = !enabled, count = buffer.totalReceivedNow)
         }
     }
 

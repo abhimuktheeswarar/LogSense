@@ -31,7 +31,7 @@ class HostileConfigTest {
     )
 
     private fun feed(custom: Map<String, String>, vararg lines: LogEntry): SignalDetector =
-        SignalDetector(LogSenseConfig(customSignals = custom)) { emptySet() }
+        SignalDetector(LogSenseConfig(customSignals = custom), muted = { emptySet() })
             .also { it.process(lines.toList()) }
 
     @Test
@@ -132,7 +132,7 @@ class HostileConfigTest {
         // The muted set is read through a lambda owned by prefs; if that ever fails, the reader
         // coroutine must not die with it. LogSenseCore guards the call — assert the throw is real
         // so that guard is not silently unnecessary.
-        val detector = SignalDetector(LogSenseConfig()) { error("prefs unavailable") }
+        val detector = SignalDetector(LogSenseConfig(), muted = { error("prefs unavailable") })
         val threw = runCatching { detector.process(listOf(entry("t", "x"))) }.isFailure
         assertTrue(threw)
     }

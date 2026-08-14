@@ -68,6 +68,7 @@ import com.msabhi.logsense.internal.reader.LogLevel
 import com.msabhi.logsense.internal.signals.BuiltInSignals
 import com.msabhi.logsense.internal.signals.SignalCategory
 import com.msabhi.logsense.internal.ui.theme.color
+import com.msabhi.logsense.internal.ui.theme.tagColor
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -132,6 +133,11 @@ internal fun SettingsScreen(core: LogSenseCore, onBack: () -> Unit) {
                         Text("lines", style = MaterialTheme.typography.labelSmall, color = cs.onSurfaceVariant)
                     }
                 }
+
+                // ---------- Logs ----------
+                Spacer(Modifier.height(24.dp))
+                Text("Logs", style = MaterialTheme.typography.titleMedium)
+                PinnedTagsEditor(core)
 
                 // ---------- Events ----------
                 Spacer(Modifier.height(24.dp))
@@ -206,6 +212,135 @@ private fun SettingIconRow(
  * Capture-tag rows: each tag carries an optional regex (blank = built-in parser). Tags set in code
  * are locked; QA can add new tags (with their own optional regex) and edit/remove those.
  */
+/**
+ * The full pinned-tags picture: config pins (locked), user pins (unpinnable), and an add field
+ * for tags that aren't on screen right now. The Logs tab's band menu is the in-the-moment way
+ * to pin; this is where the set is reviewed and managed.
+ */
+@Composable
+private fun PinnedTagsEditor(core: LogSenseCore) {
+    val cs = MaterialTheme.colorScheme
+    val configPins = remember { core.config.pinnedTags.sorted() }
+    val userPinsSet by core.prefs.pinnedTags.collectAsState()
+    val userPins = remember(userPinsSet) { userPinsSet.sorted() }
+    var showPinDialog by remember { mutableStateOf(false) }
+
+    Spacer(Modifier.height(12.dp))
+    Row(verticalAlignment = Alignment.Bottom) {
+        Text("Pinned tags", style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.weight(1f))
+        Text(
+            (configPins.size + userPins.size).let { "$it " + if (it == 1) "tag" else "tags" },
+            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+            color = cs.onSurfaceVariant,
+        )
+    }
+    Spacer(Modifier.height(6.dp))
+    Text(
+        "Lines with these tags are never rotated out of the log buffer. Pin from here, or tap a " +
+            "tag header in the Logs tab. Exact, case-sensitive match; tags set in code are locked.",
+        style = MaterialTheme.typography.bodySmall,
+        color = cs.onSurfaceVariant,
+    )
+    Spacer(Modifier.height(10.dp))
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        configPins.forEach { tag -> PinnedTagRow(tag, locked = true) }
+        userPins.forEach { tag ->
+            key(tag) {
+                PinnedTagRow(tag, locked = false, onUnpin = { core.prefs.setTagPinned(tag, false) })
+            }
+        }
+        AddTagRow { showPinDialog = true }
+    }
+
+    if (showPinDialog) {
+        PinTagDialog(
+            existing = core.config.pinnedTags + userPinsSet,
+            onDismiss = { showPinDialog = false },
+            onPin = { tag -> core.prefs.setTagPinned(tag, true) },
+        )
+    }
+}
+
+/** Pins a tag by name, for tags that aren't on screen to tap. Valid = non-blank, sane length,
+ *  single line, not already pinned. */
+@Composable
+private fun PinTagDialog(existing: Set<String>, onDismiss: () -> Unit, onPin: (String) -> Unit) {
+    var value by remember { mutableStateOf("") }
+    val tag = value.trim()
+    val error = when {
+        tag.isEmpty() -> null // just disabled, no shouting at an empty field
+        '\n' in tag -> "One tag only — no line breaks"
+        tag.length > MAX_PIN_TAG_LENGTH -> "Too long for a tag (max $MAX_PIN_TAG_LENGTH characters)"
+        tag in existing -> "Already pinned"
+        else -> null
+    }
+    val valid = tag.isNotEmpty() && error == null
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Pin a tag") },
+        text = {
+            Column {
+                Text(
+                    "Lines with this tag are never rotated out of the log buffer. Exact, case-sensitive match.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = value,
+                    onValueChange = { value = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    label = { Text("Tag") },
+                    isError = error != null,
+                    supportingText = error?.let { { Text(it) } },
+                    textStyle = MaterialTheme.typography.bodyMedium.copy(fontFamily = FontFamily.Monospace),
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(enabled = valid, onClick = { onPin(tag); onDismiss() }) { Text("Pin") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
+}
+
+@Composable
+private fun PinnedTagRow(tag: String, locked: Boolean, onUnpin: (() -> Unit)? = null) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(10.dp))
+            .background(cs.surfaceContainerHigh)
+            .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp)
+            .heightIn(min = 40.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(LogSenseIcons.Lock, contentDescription = null, tint = tagColor(tag), modifier = Modifier.size(14.dp))
+        Spacer(Modifier.width(10.dp))
+        Text(
+            text = tag,
+            style = MaterialTheme.typography.titleSmall.copy(fontFamily = FontFamily.Monospace),
+            color = tagColor(tag),
+            modifier = Modifier.weight(1f),
+        )
+        if (locked) {
+            Text(
+                "in code",
+                style = MaterialTheme.typography.labelSmall,
+                color = cs.onSurfaceVariant,
+                modifier = Modifier.padding(end = 10.dp),
+            )
+        } else {
+            IconButton(onClick = { onUnpin?.invoke() }) {
+                Icon(LogSenseIcons.Close, contentDescription = "Unpin $tag", tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
+            }
+        }
+    }
+}
+
 @Composable
 private fun CaptureTagsEditor(core: LogSenseCore) {
     val cs = MaterialTheme.colorScheme
@@ -220,7 +355,7 @@ private fun CaptureTagsEditor(core: LogSenseCore) {
         Text("Capture tags", style = MaterialTheme.typography.titleSmall)
         Spacer(Modifier.weight(1f))
         Text(
-            "${configEntries.size + settingsEntries.size} tags",
+            (configEntries.size + settingsEntries.size).let { "$it " + if (it == 1) "tag" else "tags" },
             style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
             color = cs.onSurfaceVariant,
         )
@@ -550,3 +685,6 @@ private fun openUrl(context: android.content.Context, url: String) {
         )
     }
 }
+
+/** Real logcat tags are short; this guards against pasting a whole message by mistake. */
+private const val MAX_PIN_TAG_LENGTH = 100

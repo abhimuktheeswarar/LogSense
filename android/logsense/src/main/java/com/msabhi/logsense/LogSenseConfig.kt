@@ -27,8 +27,29 @@ public class LogSenseConfig(
      * overrides those and runs for every captured tag.
      */
     public val analyticsExtractor: ((tag: String, message: String) -> AnalyticsEvent?)? = null,
-    /** Max log lines kept in the in-memory buffer. */
-    public val maxBufferedLines: Int = 50_000,
+    /** Max log lines kept in the in-memory buffer. Deliberately modest: every UI cost scales with
+     *  this number, and lines that must not be lost belong in [pinnedTags], not in a bigger ring. */
+    public val maxBufferedLines: Int = 10_000,
+    /**
+     * Log tags whose lines are never lost to the buffer cap: when the ring evicts one, it moves to
+     * a pinned side-store (capped at 10k lines) and stays in the stream, in order, for the whole
+     * run. For the handful of tags an investigation actually hinges on — the rolling buffer stays
+     * small while the lines that matter survive. Exact, case-sensitive tag match.
+     *
+     * Tags set here are locked; further tags can be pinned and unpinned live from any log line's
+     * sheet (tap a line → Pin), persisted across runs.
+     */
+    public val pinnedTags: Set<String> = emptySet(),
+    /**
+     * When true, log lines stop being retained while the device is attached over adb (USB
+     * debugging or an emulator) — Android Studio's logcat is already showing them there. The
+     * stream keeps being read, so analytics events, signals, crashes and **pinned tags** all
+     * keep recording; only the rolling line buffer pauses, dropping its memory and UI cost to
+     * ~zero at the desk. Retention resumes the moment the cable comes out. The Logs tab says so
+     * and offers a one-tap "Capture anyway" override. Wireless debugging is not detected —
+     * those sessions keep full capture. Default false.
+     */
+    public val pauseLogsWhileAdbConnected: Boolean = false,
     /**
      * Whether LogSense installs a `Thread.UncaughtExceptionHandler` to capture JVM crashes.
      * It always **chains to any handler already installed**, so your existing crash reporter

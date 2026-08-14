@@ -27,10 +27,37 @@ class SignalDetectorTest {
     private fun detector(
         config: LogSenseConfig = LogSenseConfig(),
         muted: Set<String> = emptySet(),
-    ) = SignalDetector(config) { muted }
+    ) = SignalDetector(config, muted = { muted })
 
     private fun idsFor(vararg entries: LogEntry): List<String> =
         detector().let { d -> d.process(entries.toList()); d.hits.value.map { it.signal.id } }
+
+    @Test
+    fun `self jank is suppressed while the LogSense UI is visible, other signals are not`() {
+        val d = SignalDetector(LogSenseConfig(), muted = { emptySet() }, ownUiVisible = { true })
+        d.process(
+            listOf(
+                entry("Choreographer", "Skipped 41 frames!  The application may be doing too much work on its main thread."),
+                entry("OpenGLRenderer", "Davey! duration=726ms; Flags=0"),
+                entry("AndroidRuntime", "FATAL EXCEPTION: main", LogLevel.ERROR),
+            ),
+        )
+        d.publish()
+        // The two jank signals measure LogSense's own foreground rendering; the crash still lands.
+        assertEquals(listOf("crash.fatal"), d.hits.value.map { it.signal.id })
+    }
+
+    @Test
+    fun `rapid batches defer publication until the ticker's publish`() {
+        val d = detector()
+        val line = { entry("Choreographer", "Skipped 41 frames!  The application may be doing too much work.") }
+        d.process(listOf(line())) // quiet period: publishes immediately
+        assertEquals(1, d.hits.value.size)
+        d.process(listOf(line())) // within the rate-limit window: deferred
+        assertEquals(1, d.hits.value.size)
+        d.publish() // the core ticker's trailing edge
+        assertEquals(2, d.hits.value.size)
+    }
 
     @Test
     fun `detects a fatal exception`() {
@@ -127,7 +154,7 @@ class SignalDetectorTest {
     @Test
     fun `unmuting takes effect without restarting`() {
         var muted = setOf("anr.skipped_frames")
-        val d = SignalDetector(LogSenseConfig()) { muted }
+        val d = SignalDetector(LogSenseConfig(), muted = { muted })
         d.process(listOf(entry("Choreographer", "Skipped 41 frames!")))
         assertTrue(d.hits.value.isEmpty())
         muted = emptySet()
@@ -177,6 +204,7 @@ class SignalDetectorTest {
     fun `hits are capped, oldest evicted`() {
         val d = detector()
         repeat(600) { d.process(listOf(entry("Choreographer", "Skipped $it frames!"))) }
+        d.publish() // rapid batches defer publication to the ticker's trailing edge
         val hits = d.hits.value
         assertEquals(500, hits.size)
         assertEquals("Skipped 100 frames!", hits.first().preview)

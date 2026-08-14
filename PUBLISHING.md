@@ -9,8 +9,10 @@ Both platforms release **in lockstep** under one annotated tag `vX.Y.Z` on `mast
 - **Android** publishes `com.msabhi:logsense` and `com.msabhi:logsense-no-op` to Maven Central
   (Central Portal) via the
   [vanniktech maven-publish plugin](https://github.com/vanniktech/gradle-maven-publish-plugin),
-  at the same version as the tag — even when one platform's code is unchanged, both ship, so
-  tag = Maven version = SPM version always.
+  at the same version as the tag — even when one artifact's code is unchanged, all ship, so
+  tag = Maven version = SPM version always. The root publish task covers both modules.
+  (A `logsense-gradle-plugin` existed through 0.6.12 for READ_LOGS-era device setup; retired
+  once the reader went permission-free — no new versions of it ship.)
 
 ## One-time machine setup (Android publishing)
 

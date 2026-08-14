@@ -1,5 +1,6 @@
 package com.msabhi.logsense.internal.ui
 
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -207,21 +209,53 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     // are dropped here too, not only on the Signals tab — mute has to mean mute everywhere, or you
     // silence a noisy rule and the log list stays speckled with its pills.
     val logScroll by core.prefs.logScroll.collectAsState()
+    val listState = rememberLazyListState()
+    // True while the viewport hangs near the newest lines — the always-on follow case.
+    val nearTail = remember {
+        derivedStateOf {
+            val info = listState.layoutInfo
+            val last = info.visibleItemsInfo.lastOrNull()
+            last == null || last.index >= info.totalItemsCount - NEAR_TAIL_SLACK
+        }
+    }
     // `muted` is a key, not just a read: the producer otherwise only wakes on a buffer emission, so
     // muting while the stream is idle would leave the pills on screen until the next line arrived.
     val muted by core.prefs.mutedSignals.collectAsState()
     val view by produceState(LogView.EMPTY, predicate, matcher, frozen, muted, clearedAt) {
+        // runCatching: a failed derivation (OOM under memory pressure at a full buffer is the real
+        // case) must keep the previous view and try again on the next emission — a producer that
+        // dies here leaves the tab wedged on the spinner forever while capture keeps running.
         val snap = frozen
         if (snap != null) {
-            value = withContext(Dispatchers.Default) {
-                LogView.of(snap.since(clearedAt), predicate, matcher, audibleHits(core))
-            }
-        } else {
-            core.buffer.snapshot.collect { live ->
-                value = withContext(Dispatchers.Default) {
-                    LogView.of(live.since(clearedAt), predicate, matcher, audibleHits(core))
+            runCatching {
+                withContext(Dispatchers.Default) {
+                    LogView.of(snap.since(clearedAt), predicate, matcher, audibleHits(core))
                 }
-                delay(LOG_VIEW_THROTTLE_MS)
+            }.getOrNull()?.let { value = it }
+        } else {
+            // While the user follows the tail with no filter, find or jump active, only the newest
+            // window is derived and rendered. Composing the full buffer in the follow path is what
+            // stormed the main thread (multi-second cold-open freezes, ANRs on slower devices) —
+            // and a follower only ever *sees* the tail anyway. The moment they go looking —
+            // scroll up, filter, find, jump from a signal — the full history derives on the next
+            // pass.
+            suspend fun derive(entries: List<LogEntry>) {
+                runCatching {
+                    withContext(Dispatchers.Default) {
+                        LogView.of(entries.since(clearedAt), predicate, matcher, audibleHits(core))
+                    }
+                }.getOrNull()?.let { value = it }
+            }
+            core.buffer.snapshot.collect { live ->
+                val following = nearTail.value && matcher == null &&
+                    tab.filter.query.isBlank() && core.jumpToLogId.value == null
+                derive(if (following) live.takeLast(FOLLOW_WINDOW_LINES) else live)
+                // The rebuild is O(n) and every new view recomposes the visible tail while
+                // following, so the cadence backs off hard as the buffer grows: ~5x/sec while
+                // small, ~1x/sec at a full 10k buffer. Measured: at 5 Hz over a full buffer with
+                // a flooding stream, viewport recomposition plus GC pegged the main thread into
+                // an ANR; at 1 Hz it breathes.
+                delay(maxOf(LOG_VIEW_THROTTLE_MS, live.size / 10L))
             }
         }
     }
@@ -232,7 +266,6 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     val matchIndices = view.matchIndices
     var matchPos by remember(matcher) { mutableIntStateOf(0) }
 
-    val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
@@ -341,6 +374,34 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
 
         if (tab.paused) FrozenBanner(bufferedWhilePaused)
 
+        // Rotation is normal operation, so no banner for it — but an empty search result must be
+        // distinguishable from "that log was never captured", hence NoMatches gets the count.
+        val evicted by core.buffer.evicted.collectAsState()
+
+        // Same honesty for the source side: a resume overlap that vanished from logd means the
+        // lines in between are unrecoverable (ring rotation or a device-log clear). A transient
+        // note is enough — the loss is momentary, so the notice should be too.
+        val gaps by core.logGapCount.collectAsState()
+        LaunchedEffect(gaps) {
+            if (gaps > core.logGapShownAt.value) {
+                core.logGapShownAt.value = gaps
+                snackbar.showSnackbar(
+                    "Gap in the device log — lines rotated out (or were cleared) before capture",
+                    duration = SnackbarDuration.Short,
+                )
+            }
+        }
+
+        // Desk mode: opted-in hosts pause line retention while adb is attached (Studio has the
+        // logs there); events, signals, crashes and pinned tags keep recording.
+        if (core.config.pauseLogsWhileAdbConnected) {
+            val adbAttached by core.adbAttachment.attached.collectAsState()
+            val overridden by core.adbPauseOverride.collectAsState()
+            if (adbAttached && !overridden) {
+                AdbPausedBanner(onCaptureAnyway = { core.adbPauseOverride.value = true })
+            }
+        }
+
         when {
             entries.isEmpty() -> EmptyLogs(core.appName)
             // First derivation for this tab hasn't landed yet (only ever EMPTY before the first
@@ -348,17 +409,22 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
             view === LogView.EMPTY -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-            filtered.isEmpty() -> NoMatches(tab.filter, onClear = { update { LogFilter() } })
-            else -> LogList(
-                groups = groups,
-                items = items,
-                listState = listState,
-                viewMode = tab.viewMode,
-                scroll = logScroll,
-                matcher = matcher,
-                autoFollow = !tab.paused,
-                signals = view.signals,
-            )
+            filtered.isEmpty() -> NoMatches(tab.filter, evicted, onClear = { update { LogFilter() } })
+            else -> {
+                val userPins by core.prefs.pinnedTags.collectAsState()
+                LogList(
+                    groups = groups,
+                    items = items,
+                    listState = listState,
+                    viewMode = tab.viewMode,
+                    scroll = logScroll,
+                    matcher = matcher,
+                    autoFollow = !tab.paused,
+                    signals = view.signals,
+                    pinStateOf = { tag -> if (tag in core.config.pinnedTags) null else tag in userPins },
+                    onPinTag = { tag, pin -> core.prefs.setTagPinned(tag, pin) },
+                )
+            }
         }
     }
 
@@ -366,9 +432,12 @@ private fun LogTabContent(core: LogSenseCore, tab: LogTab, onTabChange: (LogTab)
     }
 
     sheetEntry?.let { entry ->
+        val userPins by core.prefs.pinnedTags.collectAsState()
         LogLineSheet(
             entry = entry,
             signal = view.signals[entry.id],
+            pinned = if (entry.tag in core.config.pinnedTags) null else entry.tag in userPins,
+            onPinTag = { tagValue, pin -> core.prefs.setTagPinned(tagValue, pin) },
             onFilterByTag = { tagValue -> update { copy(query = withTag(query, tagValue)) } },
             onDismiss = { sheetEntry = null },
         )
@@ -414,6 +483,20 @@ private fun flatten(groups: List<LogGroup>): List<LogItem> =
 /** Max rate at which a live tab re-derives its view from the buffer (~5x/sec) — enough to feel live
  *  without pegging the CPU when logs pour in. */
 private const val LOG_VIEW_THROTTLE_MS = 200L
+
+/** Lines rendered while following the tail — see the follow-window note above. */
+private const val FOLLOW_WINDOW_LINES = 2_000
+
+/** How close to the end (in rows) still counts as following the tail. */
+private const val NEAR_TAIL_SLACK = 50
+
+/** Pan states kept for scroll-entry sections before the map is reset. */
+private const val MAX_GROUP_SCROLL_STATES = 500
+
+/** Even wrapped, one row never lays out more than this many lines — a pathological single
+ *  message (thousands of merged continuations) otherwise costs a multi-second StaticLayout.
+ *  The full text is always available from the line's sheet. */
+private const val MAX_WRAP_LINES = 300
 
 /** One tab's derived view of the buffer — filtered lines, their groups/items, the tag set for
  *  autocomplete, and the signals landing in this view. Built by [of] on a background dispatcher so
@@ -719,6 +802,38 @@ private fun FrozenBanner(buffered: Int) {
 }
 
 @Composable
+private fun AdbPausedBanner(onCaptureAnyway: () -> Unit) {
+    val cs = MaterialTheme.colorScheme
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp)
+            .padding(bottom = 4.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .background(cs.surfaceContainerHigh)
+            .border(1.dp, cs.outlineVariant, RoundedCornerShape(10.dp))
+            .padding(start = 12.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(LogSenseIcons.Pause, contentDescription = null, tint = cs.onSurfaceVariant, modifier = Modifier.size(16.dp))
+        Spacer(Modifier.width(8.dp))
+        Text(
+            "Logs paused — Android Studio attached. Events, signals & pins still recording.",
+            style = MaterialTheme.typography.labelMedium,
+            color = cs.onSurface,
+            modifier = Modifier.weight(1f),
+        )
+        TextButton(onClick = onCaptureAnyway) { Text("Capture anyway", style = MaterialTheme.typography.labelMedium) }
+    }
+}
+
+/**
+ * Rolling-buffer eviction notice. Deliberately quiet: for a chatty host, eviction is normal
+ * steady-state, not a fault — a permanent amber warning trains people to ignore banners. It is
+ * dismissible for the session; the fact resurfaces in [NoMatches], the one moment it changes a
+ * conclusion. Pinned tags are the mechanism for lines that must never rotate out.
+ */
+@Composable
 private fun EmptyLogs(appName: String) {
     EmptyState(
         icon = LogSenseIcons.Lines,
@@ -728,12 +843,19 @@ private fun EmptyLogs(appName: String) {
 }
 
 @Composable
-private fun NoMatches(filter: LogFilter, onClear: () -> Unit) {
+private fun NoMatches(filter: LogFilter, evicted: Int, onClear: () -> Unit) {
+    // The eviction fact matters exactly here: "no match" must never be silently ambiguous with
+    // "your line rotated out of the buffer before you searched".
+    val evictionNote = if (evicted > 0) {
+        " Note: ${formatCount(evicted)} older lines already rotated out of the buffer this run — a pinned tag survives that."
+    } else {
+        ""
+    }
     Column(Modifier.fillMaxSize(), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
         EmptyStateInner(
             icon = LogSenseIcons.Search,
             title = "Nothing matches this filter",
-            body = "No captured lines match ${filter.query.ifBlank { "level ${filter.minLevel.letter}+" }}. The stream is still recording.",
+            body = "No captured lines match ${filter.query.ifBlank { "level ${filter.minLevel.letter}+" }}. The stream is still recording.$evictionNote",
         )
         Spacer(Modifier.height(14.dp))
         Row(
@@ -783,6 +905,8 @@ private fun LogList(
     matcher: TextMatcher?,
     autoFollow: Boolean,
     signals: Map<Long, Signal>,
+    pinStateOf: (String) -> Boolean?,
+    onPinTag: (String, Boolean) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     // Scroll-entry renders one item per tag group; every other mode renders a flat band/line stream.
@@ -805,19 +929,40 @@ private fun LogList(
     // each tag section together, LINE scrolls each row's message, WRAP wraps.
     val hScroll = rememberScrollState()
     val pan = scroll == LogScroll.PAN
+    // Scroll-entry mode: one shared pan state per tag section, so lazily-composed rows still
+    // move together. Keyed by the section; pruned so a long session can't grow it unbounded.
+    val groupScrolls = remember { mutableMapOf<Any, ScrollState>() }
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
-            state = listState,
-            modifier = if (pan) Modifier.fillMaxHeight().horizontalScroll(hScroll) else Modifier.fillMaxSize(),
-        ) {
-            if (entry) {
-                items(groups, key = { it.key }) { group -> LogGroupItem(group, viewMode, matcher, signals) }
-            } else {
-                items(items, key = { it.key }) { item ->
-                    when (item) {
-                        // Header spans the viewport (with a divider) except in PAN, where it pans with the rows.
-                        is LogItem.Band -> TagBand(item, fillWidth = !pan)
-                        is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher, signals[item.entry.id])
+        // One SelectionContainer for the whole list — rows inside stay selectable (across rows,
+        // even), while each row composes as plain Text. See the note in [MessageText].
+        SelectionContainer {
+            LazyColumn(
+                state = listState,
+                modifier = if (pan) Modifier.fillMaxHeight().horizontalScroll(hScroll) else Modifier.fillMaxSize(),
+            ) {
+                if (entry) {
+                    // Every row is its own lazy item: a section is unbounded (a chatty tag can
+                    // hold the entire buffer), and composing it as one Column was a guaranteed
+                    // multi-second frame — an ANR captured in the wild proved it.
+                    if (groupScrolls.size > MAX_GROUP_SCROLL_STATES) groupScrolls.clear()
+                    groups.forEach { group ->
+                        item(key = group.key) {
+                            TagBand(group.band, fillWidth = true, pinned = pinStateOf(group.band.tag), onPinTag = onPinTag)
+                        }
+                        items(group.lines, key = { it.key }) { line ->
+                            val hs = groupScrolls.getOrPut(group.key) { ScrollState(0) }
+                            Box(Modifier.horizontalScroll(hs)) {
+                                LogRow(line.entry, viewMode, LogScroll.PAN, matcher, signals[line.entry.id])
+                            }
+                        }
+                    }
+                } else {
+                    items(items, key = { it.key }) { item ->
+                        when (item) {
+                            // Header spans the viewport (with a divider) except in PAN, where it pans with the rows.
+                            is LogItem.Band -> TagBand(item, fillWidth = !pan, pinned = pinStateOf(item.tag), onPinTag = onPinTag)
+                            is LogItem.Line -> LogRow(item.entry, viewMode, scroll, matcher, signals[item.entry.id])
+                        }
                     }
                 }
             }
@@ -836,30 +981,6 @@ private fun LogList(
     }
 }
 
-/**
- * A whole tag section for **Scroll entry** mode: a fixed full-width header over the section's lines,
- * which share one horizontal scroll so swiping any line pans the entire section together (each
- * section independent of the others).
- */
-@Composable
-private fun LogGroupItem(
-    group: LogGroup,
-    viewMode: ViewMode,
-    matcher: TextMatcher?,
-    signals: Map<Long, Signal>,
-) {
-    val hs = rememberScrollState()
-    Column(Modifier.fillMaxWidth()) {
-        TagBand(group.band, fillWidth = true)
-        Column(Modifier.horizontalScroll(hs)) {
-            // PAN-style rows: wrap-content, single un-wrapped line — the section's shared scroll pans them.
-            group.lines.forEach { line ->
-                LogRow(line.entry, viewMode, LogScroll.PAN, matcher, signals[line.entry.id])
-            }
-        }
-    }
-}
-
 @Composable
 internal fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc: String, primary: Boolean, onClick: () -> Unit) {
     val cs = MaterialTheme.colorScheme
@@ -872,30 +993,69 @@ internal fun LogFab(icon: androidx.compose.ui.graphics.vector.ImageVector, desc:
 }
 
 @Composable
-private fun TagBand(band: LogItem.Band, fillWidth: Boolean) {
-    Row(
-        // Wrap-content (no flexible divider) when the header pans with the rows (PAN mode).
-        modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
-            .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 3.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = band.tag,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold),
-            // Identity, not severity: the same tag keeps its hue so interleaved subsystems separate
-            // at a glance. Level colouring stays on the row stripe, letter and message.
-            color = tagColor(band.tag),
-        )
-        Spacer(Modifier.width(8.dp))
-        if (fillWidth) {
-            Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
-            Spacer(Modifier.width(8.dp))
+private fun TagBand(
+    band: LogItem.Band,
+    fillWidth: Boolean,
+    /** null = pinned by config (locked); the band is the tag-level tap target for pinning. */
+    pinned: Boolean? = false,
+    onPinTag: ((String, Boolean) -> Unit)? = null,
+) {
+    var menu by remember(band.tag) { mutableStateOf(false) }
+    Box {
+        if (onPinTag != null) {
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            when (pinned) {
+                                null -> "Pinned by config"
+                                true -> "Unpin \"${band.tag}\""
+                                false -> "Pin \"${band.tag}\" — survives the buffer cap"
+                            },
+                        )
+                    },
+                    enabled = pinned != null,
+                    onClick = {
+                        menu = false
+                        if (pinned != null) onPinTag(band.tag, !pinned)
+                    },
+                )
+            }
         }
-        Text(
-            text = "pid ${band.pid}",
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
-            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-        )
+        Row(
+            // Wrap-content (no flexible divider) when the header pans with the rows (PAN mode).
+            modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+                .let { if (onPinTag != null) it.clickable { menu = true } else it }
+                .padding(start = 14.dp, end = 14.dp, top = 8.dp, bottom = 3.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = band.tag,
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold),
+                // Identity, not severity: the same tag keeps its hue so interleaved subsystems separate
+                // at a glance. Level colouring stays on the row stripe, letter and message.
+                color = tagColor(band.tag),
+            )
+            if (pinned != false) {
+                Spacer(Modifier.width(5.dp))
+                Icon(
+                    LogSenseIcons.Lock,
+                    contentDescription = "Pinned tag",
+                    tint = tagColor(band.tag).copy(alpha = 0.8f),
+                    modifier = Modifier.size(11.dp),
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            if (fillWidth) {
+                Box(Modifier.weight(1f).height(1.dp).background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f)))
+                Spacer(Modifier.width(8.dp))
+            }
+            Text(
+                text = "pid ${band.pid}",
+                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            )
+        }
     }
 }
 
@@ -981,13 +1141,16 @@ private fun MessageText(prefix: String?, text: AnnotatedString, color: Color, sc
     val wrap = scroll == LogScroll.WRAP
     // LINE mode gives each row's message its own horizontal scroll (gutter/timestamp stay put).
     val lineScroll = if (scroll == LogScroll.LINE) Modifier.horizontalScroll(rememberScrollState()) else Modifier
-    SelectionContainer(lineScroll) {
-        Text(
-            text = body,
-            style = style,
-            color = color,
-            softWrap = wrap,
-            maxLines = if (wrap) Int.MAX_VALUE else 1,
-        )
-    }
+    // Selection comes from the single SelectionContainer around the list in [LogList]. A per-row
+    // container here builds a registrar + observer stack per visible row — profiled as the
+    // dominant main-thread cost of composing the list (multi-second cold-open storms, ANRs on
+    // slower devices).
+    Text(
+        text = body,
+        style = style,
+        color = color,
+        softWrap = wrap,
+        maxLines = if (wrap) MAX_WRAP_LINES else 1,
+        modifier = lineScroll,
+    )
 }

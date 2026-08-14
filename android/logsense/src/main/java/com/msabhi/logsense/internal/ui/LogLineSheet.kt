@@ -52,6 +52,9 @@ import org.json.JSONObject
 internal fun LogLineSheet(
     entry: LogEntry,
     signal: Signal?,
+    /** null = this tag is pinned by config and can't be toggled here. */
+    pinned: Boolean?,
+    onPinTag: (String, Boolean) -> Unit,
     onFilterByTag: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -132,6 +135,21 @@ internal fun LogLineSheet(
                     Icon(LogSenseIcons.FilterList, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("tag:${entry.tag}")
+                }
+                // Pinned tags survive the buffer cap. Config-pinned (null) shows locked, no toggle.
+                TextButton(
+                    onClick = { if (pinned != null) onPinTag(entry.tag, !pinned) },
+                    enabled = pinned != null,
+                ) {
+                    Icon(LogSenseIcons.Lock, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        when (pinned) {
+                            null -> "Pinned"
+                            true -> "Unpin"
+                            false -> "Pin"
+                        },
+                    )
                 }
             }
         }

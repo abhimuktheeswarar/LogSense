@@ -32,6 +32,8 @@ internal data class SignalHit(
 internal class SignalDetector(
     private val config: LogSenseConfig,
     private val muted: () -> Set<String> = { emptySet() },
+    /** True while LogSense's own UI is in the foreground — see the jank suppression in [process]. */
+    private val ownUiVisible: () -> Boolean = { false },
 ) {
 
     // Predicates are rebuilt only when the muted set changes (the catalog and config are constant),
@@ -65,8 +67,13 @@ internal class SignalDetector(
     fun process(batch: List<LogEntry>) {
         val rules = rules()
         if (rules.isEmpty()) return
+        // Frame-skip/long-frame lines produced while LogSense's own UI is foreground measure
+        // LogSense, not the host — and reporting them feeds itself: each jank hit updates the
+        // Signals UI, which janks, which logs another line. Suppress just those two while visible.
+        val suppressSelfJank = ownUiVisible()
         val found = batch.mapNotNull { entry ->
             val signal = rules.firstOrNull { (_, matches) -> matches(entry) }?.first ?: return@mapNotNull null
+            if (suppressSelfJank && signal.id in SELF_JANK_IDS) return@mapNotNull null
             SignalHit(
                 signal = signal,
                 entryId = entry.id,
@@ -88,14 +95,51 @@ internal class SignalDetector(
     }
 
     fun clear() {
-        synchronized(lock) { _hits.value = emptyList() }
+        synchronized(lock) {
+            current = emptyList()
+            _hits.value = emptyList()
+            dirty = false
+        }
     }
+
+    /*
+     * Publication is rate-limited: every [_hits] emission recomposes the scaffold badge on every
+     * tab and the whole Signals screen, so per-batch emissions during a chatty stream turn into a
+     * once-a-second recomposition churn (measured as continuous skipped frames in a heavy host).
+     * A quiet-period hit still publishes immediately; bursts defer to [publish], ticked by the
+     * core's flush loop.
+     */
+    private var current: List<SignalHit> = emptyList()
+
+    @Volatile
+    private var dirty = false
+
+    @Volatile
+    private var lastPublishMs = 0L
 
     private fun add(found: List<SignalHit>) {
         if (found.isEmpty()) return
         synchronized(lock) {
-            val merged = _hits.value + found
-            _hits.value = if (merged.size > MAX_HITS) merged.takeLast(MAX_HITS) else merged
+            val merged = current + found
+            current = if (merged.size > MAX_HITS) merged.takeLast(MAX_HITS) else merged
+            val now = System.currentTimeMillis()
+            if (now - lastPublishMs >= PUBLISH_INTERVAL_MS) {
+                _hits.value = current
+                lastPublishMs = now
+                dirty = false
+            } else {
+                dirty = true
+            }
+        }
+    }
+
+    /** Trailing edge of the rate limit — called from the core's flush ticker. */
+    fun publish() {
+        if (!dirty) return
+        synchronized(lock) {
+            _hits.value = current
+            lastPublishMs = System.currentTimeMillis()
+            dirty = false
         }
     }
 
@@ -103,5 +147,9 @@ internal class SignalDetector(
         /** The buffer evicts too, so keeping more hits than this only accumulates dead pointers. */
         const val MAX_HITS = 500
         const val PREVIEW_CHARS = 200
+        const val PUBLISH_INTERVAL_MS = 500L
+
+        /** Suppressed while LogSense's own UI is foreground — they'd be measuring LogSense. */
+        val SELF_JANK_IDS = setOf("anr.skipped_frames", "anr.davey")
     }
 }

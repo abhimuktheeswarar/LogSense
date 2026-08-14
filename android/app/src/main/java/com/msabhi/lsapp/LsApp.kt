@@ -14,6 +14,9 @@ class LsApp : Application() {
                 analyticsTagPatterns = mapOf("Analytics" to null),
                 // On top of the built-in catalog; same query syntax as the Logs filter field.
                 customSignals = mapOf("Payment declined" to "tag:Checkout msg:declined"),
+                // These tags' lines survive the buffer cap (try: log an Analytics event, then
+                // burst 50k lines — the event is still in the stream).
+                pinnedTags = setOf("Analytics"),
             ),
         )
     }

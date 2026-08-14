@@ -24,7 +24,7 @@ internal class CrashHandler(
         // LogSense would be the reason a real fault went unreported. Nothing here may mask the
         // original throwable either — the process is dying and this is our last chance to be quiet.
         try {
-            val lines = buffer.currentSnapshot().takeLast(contextLines.coerceAtLeast(0))
+            val lines = buffer.crashSnapshot().takeLast(contextLines.coerceAtLeast(0))
             store.writeCrash(thread, throwable, lines)
             // Alert from the dying process itself so the crash shows immediately, not only on the
             // next launch. Best-effort: the notify() binder call usually completes before the

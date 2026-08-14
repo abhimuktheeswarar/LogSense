@@ -4,7 +4,7 @@ import SwiftUI
 /// Mirrors Android's BuildConfig.VERSION_NAME footer — bumped as part of a release, like the
 /// Android version is.
 // Bumped by the release checklist (PUBLISHING.md step 1) — SPM has no build-time tag injection.
-private let logSenseVersion = "0.6.4"
+private let logSenseVersion = "0.6.13"
 private let repoURL = URL(string: "https://github.com/abhimuktheeswarar/LogSense")!
 
 /// Grouped inset lists per the design: appearance, capture facts, events capture tags (config tags

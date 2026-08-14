@@ -28,6 +28,18 @@ internal class LogSenseActivity : ComponentActivity() {
     private var pendingCrashId by mutableStateOf<Long?>(null)
     private var openCrashes by mutableStateOf(false)
 
+    // While this activity is foreground, the process's rendering jank is LogSense's own — the
+    // detector suppresses those signals so the tool doesn't report (and re-trigger) itself.
+    override fun onResume() {
+        super.onResume()
+        LogSenseCore.instance?.uiVisible = true
+    }
+
+    override fun onPause() {
+        LogSenseCore.instance?.uiVisible = false
+        super.onPause()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

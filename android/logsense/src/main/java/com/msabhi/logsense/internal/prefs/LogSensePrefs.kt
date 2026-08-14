@@ -42,6 +42,16 @@ internal class LogSensePrefs(context: Context) {
      *  nothing once it's off. Seeded on first run with [BuiltInSignals.MUTED_BY_DEFAULT]. */
     val mutedSignals = MutableStateFlow(loadMutedSignals())
 
+    /** Tags pinned from the UI — their lines survive the buffer cap. Merged with the config's
+     *  pinned tags, which are authoritative and can't be unpinned here. */
+    val pinnedTags = MutableStateFlow(sp.getStringSet(KEY_PINNED_TAGS, null).orEmpty())
+
+    fun setTagPinned(tag: String, pinned: Boolean) {
+        val updated = if (pinned) pinnedTags.value + tag else pinnedTags.value - tag
+        pinnedTags.value = updated
+        sp.edit().putStringSet(KEY_PINNED_TAGS, updated).apply()
+    }
+
     /**
      * The defaults are seeded exactly once, tracked by its own flag rather than by "is the set
      * empty". Without that, switching every default-off signal back on would look identical to a
@@ -135,6 +145,7 @@ internal class LogSensePrefs(context: Context) {
         private const val KEY_TAG_PATTERNS = "tag_patterns"
         private const val KEY_MUTED_SIGNALS = "muted_signals"
         private const val KEY_MUTED_SEEDED = "muted_signals_seeded"
+        private const val KEY_PINNED_TAGS = "pinned_tags"
         val DEFAULT_TAB = LogTab(id = DEFAULT_TAB_ID, name = "All")
     }
 }

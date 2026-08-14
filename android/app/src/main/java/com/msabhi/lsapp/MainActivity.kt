@@ -81,6 +81,20 @@ fun DemoScreen(modifier: Modifier = Modifier) {
         DemoButton("Spam 500 logs") {
             repeat(500) { Log.d(TAG, "Spam log line #$it with some payload data") }
         }
+        DemoButton("Burst 10k numbered logs (loss check)") {
+            // Loss check: search `burst check line` in LogSense — Find must count exactly 10000.
+            // Paced: an unthrottled tight loop outruns logd's own ingest socket, which silently
+            // drops lines before ANY reader (Android Studio included) can see them — measured
+            // 50-90% loss on a real device at tight-loop speed, ~20% still at 4k lines/s. If the
+            // count comes up short, compare against `adb shell logcat -d --pid=<pid>`: equal
+            // counts mean logd dropped at ingest and LogSense captured every delivered line.
+            Thread {
+                repeat(10_000) {
+                    Log.d(TAG, "burst check line ${it + 1} of 10000")
+                    if (it % 3 == 2) Thread.sleep(2)
+                }
+            }.start()
+        }
         DemoButton("Multi-line log") {
             Log.i(TAG, "First line\nsecond line of the same message\nthird line")
         }

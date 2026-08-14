@@ -26,11 +26,11 @@ trouble patterns — built so the tool itself never noticeably burdens the host 
 ## Install — Swift Package Manager only
 
 There is no CocoaPods podspec and none is planned. In Xcode: **File ▸ Add Package
-Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.6.4`. Or in a
+Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.6.13`. Or in a
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.6.4")
+.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.6.13")
 ```
 
 The manifest lives at the repository root and points into `apple/` — add the package from the

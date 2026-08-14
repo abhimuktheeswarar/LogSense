@@ -29,8 +29,8 @@ Looking for iOS? See [LogSense for Apple platforms](../apple/README.md).
   searches the current view with match-case / whole-word / regex, match count and next/prev. Follow-tail with
   jump-to-latest, and share the filtered logs as text or a `.txt` file. Rows are selectable text, and each tag
   keeps its own color so interleaved subsystems stay apart. Pause/resume capture from the notification. Tabs
-  persist across runs. Reads only the host app's own logs (`logcat --pid`), so **no permissions, no root,
-  no adb** needed.
+  persist across runs. Shows only the host app's own logs (filtered by pid), with **no permissions, no
+  root, no adb** needed.
 - **Analytics events** — `analyticsTagPatterns` maps each log tag to capture to an **optional regex**. With
   no regex (`null`), the built-in parser handles `name {json}`, `name Bundle[{k=v}]` and `name k=v, k2=v2`
   formats. For SDKs that bury the event name inside a JSON payload, give that tag a regex with `name` /
@@ -68,8 +68,8 @@ Looking for iOS? See [LogSense for Apple platforms](../apple/README.md).
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.6.4")
-    releaseImplementation("com.msabhi:logsense-no-op:0.6.4")
+    debugImplementation("com.msabhi:logsense:0.6.13")
+    releaseImplementation("com.msabhi:logsense-no-op:0.6.13")
 }
 ```
 
@@ -104,6 +104,27 @@ class MyApp : Application() {
 That's it. Open LogSense from the capture notification, the LogSense launcher icon, or programmatically via
 `startActivity(LogSense.getLaunchIntent(context))`.
 
+### How capture stays out of Android Studio's way
+
+An in-app log reader can collide with Studio: logd stalls `logcat -c` (~3–4 s, measured) on any
+connected app-owned reader, which outlasts Studio's own timeout — Studio prints
+`logcat -c timed out` / `Unexpected EOF`, and on some versions its logcat tab dies until
+restarted. LogSense avoids the collision structurally, with no permissions and no setup:
+
+- **While adb could be connected** (USB attached, wireless debugging or USB debugging enabled,
+  emulator), LogSense reads its logs through sub-second `logcat -d` polls. A reader exists only
+  for milliseconds at a time, so Studio's Clear has nothing to stall — on any Android version or
+  OEM. Events, signals, and pinned tags flow the same as ever; lines just arrive in small batches.
+- **When adb is provably impossible** (a QA or dogfooding device in the field), LogSense switches
+  to a continuous push reader with zero loss window — and there is nobody who could run a clear.
+
+If lines ever rotate out of the device ring between polls (an extreme device-wide burst), the
+Logs tab says so — a gap is never silent.
+
+For extra headroom against such bursts, deepen the device ring once per boot with
+`adb logcat -G 16M`, or persistently via Developer options → *Logger buffer sizes*. That's the
+whole setup story: LogSense needs no permissions, no Gradle plugin, no adb ritual.
+
 ### Configuration
 
 Everything is optional; defaults shown:
@@ -114,7 +135,9 @@ LogSense.init(
     LogSenseConfig(
         analyticsTagPatterns = emptyMap(), // tag -> optional regex; null = built-in parser, regex = per-tag extractor
         analyticsExtractor = null,       // custom (tag, message) -> AnalyticsEvent?; overrides the per-tag regexes
-        maxBufferedLines = 50_000,       // in-memory log ring buffer size (auto-reduced on low-RAM devices)
+        maxBufferedLines = 10_000,       // in-memory log ring buffer size (auto-reduced on low-RAM devices)
+        pinnedTags = emptySet(),         // tags whose lines are never lost to the cap; more can be pinned live (tap a tag header → Pin)
+        pauseLogsWhileAdbConnected = false, // desk mode: pause line retention while USB-debugging (Studio has the logs); events/signals/pins keep recording
         captureJvmCrashes = true,        // install a chaining uncaught-exception handler; false = leave it to your reporter
         crashContextLines = 200,         // log lines attached to each crash report
         retentionDays = 7,               // stored events/crashes older than this are trimmed

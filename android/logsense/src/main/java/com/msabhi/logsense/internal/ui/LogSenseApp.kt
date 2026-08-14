@@ -218,13 +218,16 @@ private fun TabLabelWithCount(title: String, summary: SignalSummary) {
 }
 
 @Composable
-private fun LivePill(capturing: Boolean, count: Int) {
-    // Green while live, red (the severity error color) when paused.
+private fun LivePill(capturing: Boolean, held: Int, ratePerSec: Int) {
+    // Green while live, red (the severity error color) when paused. Live shows the capture
+    // rate — a full ring makes any held count a static number, but the rate keeps telling you
+    // what the app is doing right now. Paused shows held: "this much is here to browse".
     val color = if (capturing) liveColor() else LogLevel.ERROR.color()
     val label = when {
-        !capturing -> "PAUSED · ${formatCount(count)}"
-        count == 0 -> "CONNECTING"
-        else -> "LIVE · ${formatCount(count)}"
+        !capturing -> "PAUSED · ${formatCount(held)}"
+        held == 0 -> "CONNECTING"
+        ratePerSec > 0 -> "LIVE · ${formatCount(ratePerSec)}/s"
+        else -> "LIVE"
     }
     // Breathing pulse via size — the dot stays fully solid (same vibrant green), only scaling in/out;
     // steady when paused.
@@ -273,7 +276,8 @@ private fun TabsScaffold(
             TopAppBar(
                 title = {
                     val capturing by core.captureEnabled.collectAsState()
-                    val total by core.buffer.totalReceived.collectAsState()
+                    val held by core.buffer.held.collectAsState()
+                    val rate by core.buffer.ratePerSec.collectAsState()
                     Column {
                         Text(
                             text = core.appName,
@@ -288,7 +292,7 @@ private fun TabsScaffold(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                             Spacer(Modifier.width(8.dp))
-                            LivePill(capturing = capturing, count = total)
+                            LivePill(capturing = capturing, held = held, ratePerSec = rate)
                         }
                     }
                 },
