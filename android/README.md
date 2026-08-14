@@ -31,6 +31,12 @@ Looking for iOS? See [LogSense for Apple platforms](../apple/README.md).
   keeps its own color so interleaved subsystems stay apart. Pause/resume capture from the notification. Tabs
   persist across runs. Shows only the host app's own logs (filtered by pid), with **no permissions, no
   root, no adb** needed.
+- **Pinned tags** — the buffer is a bounded in-memory ring (10k lines by default), and a chatty app
+  can rotate a line out in minutes; pinning a tag makes its lines immune to that rotation, however
+  loud the rest of the app gets. Pin from config (`pinnedTags`), from any tag header or line sheet in
+  the Logs tab, or in Settings, where device-added pins are managed (they persist per install; config
+  pins are locked). Pins guard against *involuntary* loss only — an explicit Clear still wipes
+  everything.
 - **Analytics events** — `analyticsTagPatterns` maps each log tag to capture to an **optional regex**. With
   no regex (`null`), the built-in parser handles `name {json}`, `name Bundle[{k=v}]` and `name k=v, k2=v2`
   formats. For SDKs that bury the event name inside a JSON payload, give that tag a regex with `name` /
