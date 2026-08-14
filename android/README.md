@@ -1,6 +1,6 @@
 # LogSense for Android
 
-On-device logcat, analytics-event and crash viewer for Android debug builds — like Chucker, but for logs.
+On-device logcat, analytics-event and crash viewer for Android debug builds.
 
 Debug builds usually don't report to Crashlytics, so a crash seen away from the laptop is lost, and verifying
 analytics events means being tethered to Android Studio's logcat. LogSense streams your app's **own** logcat
