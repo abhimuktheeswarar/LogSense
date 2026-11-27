@@ -44,11 +44,27 @@ internal enum LogSenseWindow {
 
     static func dismiss() {
         LogSenseCore.shared?.setUIVisible(false)
-        restoreHost()
-        setBeside(false)
         sceneObservation = nil
-        window?.isHidden = true
+        guard let closing = window else { return }
         window = nil
+        // Called from the tap that closes LogSense. Hiding this window and resizing the host's in
+        // the middle of that touch can leave the system's touch routing pointing at a window that
+        // no longer takes touches — finish the touch first, then tear down.
+        DispatchQueue.main.async {
+            restoreHost()
+            setBeside(false)
+            closing.isHidden = true
+            returnKeyToHost(scene: closing.windowScene)
+        }
+    }
+
+    /// Hand keyboard focus and key status back to the host's window, so it is the app's key window
+    /// again rather than whichever window UIKit picks after ours disappears.
+    private static func returnKeyToHost(scene: UIWindowScene?) {
+        let host = scene?.windows.first {
+            !($0 is LogSenseOverlayWindow) && $0.windowLevel == .normal && !$0.isHidden
+        }
+        host?.makeKey()
     }
 
     private static var sceneObservation: NSKeyValueObservation?
@@ -78,17 +94,20 @@ internal enum LogSenseWindow {
     /// Back to covering the whole app.
     static func expand() {
         sceneObservation = nil
-        restoreHost()
-        guard let window, let windowScene = window.windowScene else { return }
-        window.rootViewController?.additionalSafeAreaInsets.left = 0
-        window.frame = windowScene.coordinateSpace.bounds
-        setBeside(false)
+        // Same as closing: let the tap (or fold) that triggered this finish before windows resize.
+        DispatchQueue.main.async {
+            restoreHost()
+            guard let window, let windowScene = window.windowScene else { setBeside(false); return }
+            window.rootViewController?.additionalSafeAreaInsets.left = 0
+            window.frame = windowScene.coordinateSpace.bounds
+            setBeside(false)
+        }
     }
 
     /// The fold LogSense is docked against, while docked.
     private static var dockedDivision: CGRect?
-    /// The host's windows LogSense shrank, to give back their full size.
-    private static var resizedHostWindows: [UIWindow] = []
+    /// The host's windows LogSense shrank, each with the frame and scene bounds it had then.
+    private static var resizedHostWindows: [(window: UIWindow, frame: CGRect, sceneBounds: CGRect)] = []
 
     /// Side by side (the default): the host app's own windows shrink to the near side of the fold,
     /// so it lays itself out in its half instead of running on under LogSense. Overlay (a Settings
@@ -100,17 +119,25 @@ internal enum LogSenseWindow {
               !UserDefaults.standard.bool(forKey: Prefs.besideOverlayKey),
               let frame = DuoGeometry.hostFrame(bounds: windowScene.coordinateSpace.bounds, division: dockedDivision)
         else { return }
+        let sceneBounds = windowScene.coordinateSpace.bounds
+        // Only the windows that are the app — full-scene, normal level, visible. Hosts and their
+        // SDKs also keep small windows (floating buttons, banners, in-app messages); resizing
+        // those, and later "restoring" them to full size, would lay an invisible pane over the
+        // app that swallows every touch.
         let hostWindows = windowScene.windows.filter {
-            $0 !== window && !($0 is LogSenseOverlayWindow) && $0.windowLevel == .normal && !$0.isHidden
+            $0 !== window && !($0 is LogSenseOverlayWindow) && $0.windowLevel == .normal
+                && !$0.isHidden && $0.frame == sceneBounds
         }
+        resizedHostWindows = hostWindows.map { ($0, $0.frame, sceneBounds) }
         for hostWindow in hostWindows { hostWindow.frame = frame }
-        resizedHostWindows = hostWindows
     }
 
+    /// Each window gets back exactly what it had — or, if the scene changed size meanwhile (a
+    /// fold), the new full scene, since only full-scene windows were ever resized.
     private static func restoreHost() {
-        let bounds = window?.windowScene?.coordinateSpace.bounds
-        for hostWindow in resizedHostWindows {
-            hostWindow.frame = bounds ?? hostWindow.windowScene?.coordinateSpace.bounds ?? hostWindow.frame
+        for entry in resizedHostWindows {
+            let current = entry.window.windowScene?.coordinateSpace.bounds ?? entry.sceneBounds
+            entry.window.frame = current == entry.sceneBounds ? entry.frame : current
         }
         resizedHostWindows = []
     }

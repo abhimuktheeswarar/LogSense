@@ -74,8 +74,8 @@ Looking for iOS? See [LogSense for Apple platforms](../apple/README.md).
 ```kotlin
 // build.gradle.kts
 dependencies {
-    debugImplementation("com.msabhi:logsense:0.7.2")
-    releaseImplementation("com.msabhi:logsense-no-op:0.7.2")
+    debugImplementation("com.msabhi:logsense:0.7.3")
+    releaseImplementation("com.msabhi:logsense-no-op:0.7.3")
 }
 ```
 
