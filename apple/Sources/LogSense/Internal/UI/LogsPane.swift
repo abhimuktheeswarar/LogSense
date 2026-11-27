@@ -219,8 +219,9 @@ internal struct LogsPane: View {
             // screen's "‹ Logs" back item — continuing the task pushes, per the design.
             // With the bar shown only to host rail items, a title would repeat the header's large
             // one; the cost is a plain "Back" on pushed screens while on the rail.
-            .navigationTitle(railActions ? "" : "Logs")
-            .navigationBarTitleDisplayMode(railActions ? .inline : .automatic)
+            // Halves share the host's bar, which is there only for the rail's Single Stream button.
+            .navigationTitle(railActions || isSplit ? "" : "Logs")
+            .navigationBarTitleDisplayMode(railActions || isSplit ? .inline : .automatic)
             .toolbar { if railActions { railToolbar(rows: all) } }
             .toolbar(railActions ? .automatic : .hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showSettings) {
@@ -873,8 +874,9 @@ internal struct LogsPane: View {
                 // On the Duo's side rail the system hosts these as toolbar items instead.
                 if !railActions {
                     HStack(spacing: 8) {
-                        if isSplit, role == .primary, let splitEnabled {
-                            // Split was asked for; the same glyph, filled, goes back to one stream.
+                        if isSplit, role == .primary, !duo.verticalRail, let splitEnabled {
+                            // Without a side rail there is nowhere else for the way back: the same
+                            // glyph, filled, in the left half's header.
                             Button {
                                 splitEnabled.wrappedValue = false
                             } label: {
@@ -903,12 +905,15 @@ internal struct LogsPane: View {
                 }
             }
             // Root titled by tab: the back item carries the host name, freeing the title slot.
-            // The right half names the tab it shows; "Logs" twice said nothing about either side.
+            // The right half is titled by the tab it shows. Its caption line stays, empty, so both
+            // titles sit on one line across the fold.
             VStack(alignment: .leading, spacing: 5) {
-                Text(role == .secondary ? "RIGHT HALF" : "LOGSENSE")
+                Text("LOGSENSE")
                     .font(.system(size: 11.5, weight: .semibold))
                     .kerning(1)
                     .foregroundStyle(.secondary)
+                    .opacity(role == .secondary ? 0 : 1)
+                    .accessibilityHidden(role == .secondary)
                 if railActions {
                     // On the rail the live count rides beside the title — one row less above the stream.
                     HStack(alignment: .firstTextBaseline, spacing: 12) {

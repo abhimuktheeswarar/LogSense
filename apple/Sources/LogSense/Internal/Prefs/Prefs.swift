@@ -12,6 +12,9 @@ internal enum Prefs {
     private static let lastSeenCrashKey = "com.msabhi.logsense.lastSeenCrashMs"
     static let keepPastEventsKey = "com.msabhi.logsense.keepPastEvents"
     static let keepPastCrashesKey = "com.msabhi.logsense.keepPastCrashes"
+    /// iPhone Duo, beside the host: true = LogSense overlays the host's far half; false (default) =
+    /// the host shrinks to the near half and the two sit side by side.
+    static let besideOverlayKey = "com.msabhi.logsense.besideOverlay"
     /// iPhone Duo: the one-time hint explaining the split button has been seen.
     static let duoSplitHintShownKey = "com.msabhi.logsense.duoSplitHintShown"
 

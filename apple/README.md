@@ -28,11 +28,11 @@ trouble patterns — built so the tool itself never noticeably burdens the host 
 ## Install — Swift Package Manager only
 
 There is no CocoaPods podspec and none is planned. In Xcode: **File ▸ Add Package
-Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.1`. Or in a
+Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.2`. Or in a
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.1")
+.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.2")
 ```
 
 The manifest lives at the repository root and points into `apple/` — add the package from the
@@ -138,11 +138,15 @@ non-folding device never sees them.
     freeze. The right half is titled with its tab; the pill with the split glyph is the tab open in
     the other half (picking it swaps the halves). **Tap a line to move the other half to the same
     moment**, with *Back to live* to return; long-press → *Inspect Line* opens the line. The
-    filled split button goes back to one stream. The split lasts for the session, never the default.
+    same rail button, now filled (*Single Stream*), goes back to one stream. The split lasts for
+    the session, never the default.
   - **Crashes: the report beside its list**; *Show in Logs* jumps to the crash's moment.
 - **Beside the host** — LogSense docks on the far side of the fold while the app stays live and
   touchable on the near side: tap there, read the lines it caused here (fresh lines carry a fading
-  accent edge; the newest analytics event shows as a card). Two ways in:
+  accent edge; the newest analytics event shows as a card). By default the two sit **side by
+  side**: the app's own windows shrink to their half of the fold, so it lays itself out there
+  (restored on Expand, on fold and when LogSense closes). Settings → iPhone Duo → *Overlay* keeps
+  the app full width underneath instead. Two ways in:
   - from LogSense: overflow menu → *Open Beside <app>*;
   - from your app, in one step: `LogSense.present(beside: true)` — wire it to a debug menu or
     gesture. On an open Duo it docks; anywhere else it opens full screen as `present()` does.

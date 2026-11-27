@@ -4,7 +4,7 @@ import SwiftUI
 /// Mirrors Android's BuildConfig.VERSION_NAME footer — bumped as part of a release, like the
 /// Android version is.
 // Bumped by the release checklist (PUBLISHING.md step 1) — SPM has no build-time tag injection.
-private let logSenseVersion = "0.7.1"
+private let logSenseVersion = "0.7.2"
 private let repoURL = URL(string: "https://github.com/abhimuktheeswarar/LogSense")!
 
 /// Grouped inset lists per the design: appearance, capture facts, events capture tags (config tags
@@ -14,6 +14,8 @@ internal struct SettingsScreen: View {
     let core: LogSenseCore
     @Environment(\.openURL) private var openURL
     @AppStorage(Prefs.themeKey) private var themeRaw = ""
+    @AppStorage(Prefs.besideOverlayKey) private var besideOverlay = false
+    @Environment(\.duoPosture) private var duo
     @State private var muted = Prefs.mutedSignals()
     @State private var qaTags = Prefs.analyticsTags()
     @State private var addingTag = false
@@ -66,6 +68,24 @@ internal struct SettingsScreen: View {
                     Text("Capture")
                 } footer: {
                     Text("Set in LogSenseConfig at start.")
+                }
+
+                // Only on an iPhone Duo — the setting means nothing anywhere else.
+                if duo.division != nil || duo.hingeClosed {
+                    Section {
+                        Picker("Beside the app", selection: $besideOverlay) {
+                            Text("Side by side").tag(false)
+                            Text("Overlay").tag(true)
+                        }
+                        .pickerStyle(.segmented)
+                        .onChange(of: besideOverlay) { _ in LogSenseWindow.layoutHost() }
+                    } header: {
+                        Text("iPhone Duo")
+                    } footer: {
+                        Text(besideOverlay
+                             ? "Docked beside the app, LogSense covers the app's far half; the app keeps the whole display underneath."
+                             : "Docked beside the app, the app shrinks to its own half of the fold, so both are fully visible.")
+                    }
                 }
 
                 if #available(iOS 16.2, *) {

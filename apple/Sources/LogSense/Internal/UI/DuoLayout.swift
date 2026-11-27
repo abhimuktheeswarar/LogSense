@@ -21,7 +21,9 @@ internal struct DuoPosture: Equatable {
     /// Open: a vertical fold splits the display into a pane on each side.
     var isOpen: Bool {
         guard let division, !seated else { return false }
-        return division.height > division.width
+        // The fold must lie inside this view with room on both sides — docked beside the host,
+        // LogSense's window reaches only to the crease's edge, and that is not "open".
+        return division.height > division.width && division.minX > 1 && division.maxX < size.width - 1
     }
 }
 

@@ -36,7 +36,22 @@ internal struct LogsScreen: View {
                     } second: {
                         LogsPane(core: core, onDone: nil, store: store, role: .secondary, isSplit: true)
                     }
-                    .toolbar(.hidden, for: .navigationBar)
+                    // The way back sits where the way in was: the same rail button, now filled.
+                    // The bar exists only to put it on the rail, so it carries no title.
+                    .navigationTitle("")
+                    .navigationBarTitleDisplayMode(.inline)
+                    .toolbar {
+                        if duo.verticalRail {
+                            ToolbarItem(placement: .primaryAction) {
+                                Button {
+                                    store.splitRequested = false
+                                } label: {
+                                    Label("Single Stream", systemImage: "rectangle.split.2x1.fill")
+                                }
+                            }
+                        }
+                    }
+                    .toolbar(duo.verticalRail ? .automatic : .hidden, for: .navigationBar)
                 }
                 .onAppear { store.ensureSecondaryTab() }
             } else {

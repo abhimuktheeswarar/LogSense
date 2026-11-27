@@ -44,6 +44,7 @@ internal enum LogSenseWindow {
 
     static func dismiss() {
         LogSenseCore.shared?.setUIVisible(false)
+        restoreHost()
         setBeside(false)
         sceneObservation = nil
         window?.isHidden = true
@@ -59,7 +60,13 @@ internal enum LogSenseWindow {
         guard let window, let windowScene = window.windowScene,
               let frame = DuoGeometry.besideFrame(bounds: windowScene.coordinateSpace.bounds, division: division)
         else { return }
-        window.frame = frame
+        // The window also covers the crease, so the fold shows LogSense's background rather than
+        // a black gap; the inset keeps every control off the crease itself.
+        let crease = division?.width ?? 0
+        window.frame = CGRect(x: frame.minX - crease, y: frame.minY, width: frame.width + crease, height: frame.height)
+        window.rootViewController?.additionalSafeAreaInsets.left = crease
+        dockedDivision = division
+        layoutHost()
         setBeside(true)
         // Folding (or any other resize) changes the scene; the dock no longer means anything then,
         // so LogSense goes back to covering the app — the closed layout.
@@ -71,12 +78,45 @@ internal enum LogSenseWindow {
     /// Back to covering the whole app.
     static func expand() {
         sceneObservation = nil
+        restoreHost()
         guard let window, let windowScene = window.windowScene else { return }
+        window.rootViewController?.additionalSafeAreaInsets.left = 0
         window.frame = windowScene.coordinateSpace.bounds
         setBeside(false)
     }
 
+    /// The fold LogSense is docked against, while docked.
+    private static var dockedDivision: CGRect?
+    /// The host's windows LogSense shrank, to give back their full size.
+    private static var resizedHostWindows: [UIWindow] = []
+
+    /// Side by side (the default): the host app's own windows shrink to the near side of the fold,
+    /// so it lays itself out in its half instead of running on under LogSense. Overlay (a Settings
+    /// choice): the host keeps the whole display and LogSense covers its far half. Debug-only, and
+    /// only ever while docked — every way out restores the host's full size.
+    static func layoutHost() {
+        restoreHost()
+        guard let window, let windowScene = window.windowScene, dockedDivision != nil,
+              !UserDefaults.standard.bool(forKey: Prefs.besideOverlayKey),
+              let frame = DuoGeometry.hostFrame(bounds: windowScene.coordinateSpace.bounds, division: dockedDivision)
+        else { return }
+        let hostWindows = windowScene.windows.filter {
+            $0 !== window && !($0 is LogSenseOverlayWindow) && $0.windowLevel == .normal && !$0.isHidden
+        }
+        for hostWindow in hostWindows { hostWindow.frame = frame }
+        resizedHostWindows = hostWindows
+    }
+
+    private static func restoreHost() {
+        let bounds = window?.windowScene?.coordinateSpace.bounds
+        for hostWindow in resizedHostWindows {
+            hostWindow.frame = bounds ?? hostWindow.windowScene?.coordinateSpace.bounds ?? hostWindow.frame
+        }
+        resizedHostWindows = []
+    }
+
     private static func setBeside(_ beside: Bool) {
+        if !beside { dockedDivision = nil }
         guard let state = LogSenseCore.shared?.state, state.besideHost != beside else { return }
         if beside { state.besideSinceMs = Int64(Date().timeIntervalSince1970 * 1000) }
         state.besideHost = beside

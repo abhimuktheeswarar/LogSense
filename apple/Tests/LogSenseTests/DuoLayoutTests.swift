@@ -48,4 +48,13 @@ final class DuoLayoutTests: XCTestCase {
         XCTAssertNil(DuoGeometry.besideFrame(bounds: bounds, division: nil))
         XCTAssertNil(DuoGeometry.besideFrame(bounds: bounds, division: CGRect(x: 0, y: 330, width: 951, height: 10)))
     }
+
+    func testSideBySideGivesTheHostEverythingBeforeTheFold() {
+        let bounds = CGRect(x: 0, y: 0, width: 951, height: 669)
+        let fold = CGRect(x: 455.5, y: 0, width: 40, height: 669)
+        XCTAssertEqual(CGRect(x: 0, y: 0, width: 455.5, height: 669), DuoGeometry.hostFrame(bounds: bounds, division: fold))
+        XCTAssertNil(DuoGeometry.hostFrame(bounds: bounds, division: nil))
+        XCTAssertNil(DuoGeometry.hostFrame(bounds: bounds, division: CGRect(x: 0, y: 330, width: 951, height: 10)),
+                     "a horizontal fold has no near and far side to share")
+    }
 }

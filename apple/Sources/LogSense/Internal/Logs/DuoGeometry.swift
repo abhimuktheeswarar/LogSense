@@ -20,4 +20,11 @@ internal enum DuoGeometry {
         else { return nil }
         return CGRect(x: division.maxX, y: bounds.minY, width: bounds.maxX - division.maxX, height: bounds.height)
     }
+
+    /// The host's side when the two sit side by side: everything before the fold. Nil whenever
+    /// `besideFrame` is nil — the two halves only exist together.
+    static func hostFrame(bounds: CGRect, division: CGRect?) -> CGRect? {
+        guard let division, besideFrame(bounds: bounds, division: division) != nil else { return nil }
+        return CGRect(x: bounds.minX, y: bounds.minY, width: division.minX - bounds.minX, height: bounds.height)
+    }
 }
