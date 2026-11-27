@@ -10,7 +10,7 @@ with a hard rule that the tool never noticeably burdens the host app.
 | Platform | Docs | Install |
 |---|---|---|
 | **Android** (Compose, minSdk per library manifest) | [android/README.md](android/README.md) | `debugImplementation("com.msabhi:logsense:0.7.3")` + `releaseImplementation("com.msabhi:logsense-no-op:0.7.3")` |
-| **iOS** (SwiftUI, iOS 16+; iPhone Duo on 27.1) | [apple/README.md](apple/README.md) | Swift Package Manager: `.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.4")` |
+| **iOS** (SwiftUI, iOS 16+; iPhone Duo on 27.1) | [apple/README.md](apple/README.md) | Swift Package Manager: `.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.5")` |
 
 ## Android
 

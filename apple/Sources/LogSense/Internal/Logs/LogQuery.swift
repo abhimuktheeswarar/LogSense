@@ -3,7 +3,7 @@ import Foundation
 /// A narrowing filter over the live log stream: a min level plus a query string (`LogQuery`)
 /// supporting `tag:`, `-tag:`, `msg:`, `sub:`, `level:` and bare words. This is the "filter" half
 /// of the filter-vs-find split; it applies to incoming lines too.
-internal struct LogFilter: Equatable {
+internal struct LogFilter: Hashable {
     var minLevel: LogLevel = .debug
     var query: String = ""
 }

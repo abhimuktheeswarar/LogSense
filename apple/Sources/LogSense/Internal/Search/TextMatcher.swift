@@ -1,7 +1,7 @@
 import Foundation
 
 /// Find-bar options: match case / whole word / regex.
-internal struct SearchQuery: Equatable {
+internal struct SearchQuery: Hashable {
     var text: String = ""
     var matchCase: Bool = false
     var wholeWord: Bool = false

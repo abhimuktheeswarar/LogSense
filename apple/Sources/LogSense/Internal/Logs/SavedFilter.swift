@@ -13,6 +13,14 @@ internal struct SavedFilter: Equatable {
     var viewMode: ViewMode = .standard
 }
 
+/// A tab's filtered view of the stream, with what it was computed from — see `refiltered`.
+internal struct FilteredRows: Equatable {
+    let filter: LogFilter
+    let rows: [LogEntry]
+    /// The newest buffer line this result has seen.
+    let lastId: Int64
+}
+
 extension Array where Element == LogEntry {
     /// The slice of entries shown after clearing: everything newer than `clearedAtId`.
     ///
@@ -44,6 +52,22 @@ extension Array where Element == LogEntry {
             return (Array(self[start..<(start + window)]), start)
         }
         return (Array(suffix(window)), count - window)
+    }
+
+    /// A tab's filtered rows, brought up to date with `snapshot` as cheaply as possible. With the
+    /// same filter as `previous`, only lines that arrived since are filtered (and evicted ones
+    /// dropped) — the 1 Hz stream update costs the new lines, not the whole buffer. A new filter,
+    /// or a buffer that was cleared or restarted its ids, is a full pass.
+    func refiltered(by filter: LogFilter, previous: FilteredRows?) -> FilteredRows {
+        let newestId = last?.id ?? 0
+        if let previous, previous.filter == filter, newestId >= previous.lastId {
+            let oldestId = first?.id ?? .max
+            let predicate = LogQuery.compile(filter)
+            var rows = Array(previous.rows.drop { $0.id < oldestId })
+            rows.append(contentsOf: since(previous.lastId).filter(predicate))
+            return FilteredRows(filter: filter, rows: rows, lastId: newestId)
+        }
+        return FilteredRows(filter: filter, rows: self.filter(LogQuery.compile(filter)), lastId: newestId)
     }
 
     /// The line closest in time to `timeMs` — the other half of an open iPhone Duo jumps there.

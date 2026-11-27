@@ -50,6 +50,11 @@ internal final class LogTabsStore: ObservableObject {
         if !loaded.contains(where: { $0.id == 0 }) {
             loaded.insert(SavedFilter(id: 0, name: "All"), at: 0)
         }
+        // Scripted runs: LOGSENSE_START_FILTER=<query> starts "All" filtered, as if typed.
+        if let query = ProcessInfo.processInfo.environment["LOGSENSE_START_FILTER"],
+           let all = loaded.firstIndex(where: { $0.id == 0 }) {
+            loaded[all].filter.query = query
+        }
         tabs = loaded
     }
 

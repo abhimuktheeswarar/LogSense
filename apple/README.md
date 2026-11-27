@@ -28,11 +28,11 @@ trouble patterns — built so the tool itself never noticeably burdens the host 
 ## Install — Swift Package Manager only
 
 There is no CocoaPods podspec and none is planned. In Xcode: **File ▸ Add Package
-Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.4`. Or in a
+Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.5`. Or in a
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.4")
+.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.5")
 ```
 
 The manifest lives at the repository root and points into `apple/` — add the package from the
@@ -334,7 +334,7 @@ private-vs-public interpolation, burst, analytics payload shapes, signal lines, 
 paths. Scripted-run hooks: launch env `LOGSENSE_AUTO_OPEN=1` opens LogSense after launch,
 `LOGSENSE_CRASH_AFTER=1` raises a crash a few seconds in, `LOGSENSE_START_TAB=events|crashes|signals`
 opens on that tab, `LOGSENSE_START_BESIDE=1` docks beside the demo and `LOGSENSE_START_SPLIT=1` splits Logs on an open
-iPhone Duo. Remember the limitation above: launch
+iPhone Duo, `LOGSENSE_START_FILTER=<query>` starts the All tab filtered. Remember the limitation above: launch
 the demo from the simulator's home screen, not from Xcode, to see full capture.
 
 ## Development

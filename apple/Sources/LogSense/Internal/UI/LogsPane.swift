@@ -58,6 +58,12 @@ internal struct LogsPane: View {
     @State private var jump: Jump?
     /// The beside-the-host event card the developer closed.
     @State private var dismissedEventId: String?
+    /// The active tab's filtered rows, kept up to date off the main thread (see `refilter`).
+    @State private var filteredCache: FilteredRows?
+    /// The filter a pass is running for, so a burst of stream updates doesn't stack passes.
+    @State private var scanningFilter: LogFilter?
+    /// Find's matching line ids, computed off the main thread (see `findMatches`).
+    @State private var cachedMatches: [Int64] = []
     /// The split button's one-time explanation, shown the first time the Duo is open.
     @AppStorage(Prefs.duoSplitHintShownKey) private var splitHintShown = false
 
@@ -109,9 +115,8 @@ internal struct LogsPane: View {
         _restoreAnchor = State(initialValue: memory.autoscroll ? nil : memory.topLineId)
     }
 
-    // ponytail: filtering runs on the main thread over the whole buffer, on each ~1 Hz publish
-    // and once per debounced query. Rendering is windowed (renderSlice), so this scan is the
-    // only full-buffer cost left; move it off-main behind a task if it ever shows in a profile.
+    /// A one-off, synchronous filter — only for rare actions on a tab that isn't on screen
+    /// (pausing it). What the pane shows comes from `filteredCache`, never from a scan in `body`.
     private func filteredRows(minLevel: LogLevel, query: String) -> [LogEntry] {
         let visible = feed.snapshot
         if query.isEmpty && minLevel == .debug { return visible }
@@ -119,9 +124,11 @@ internal struct LogsPane: View {
         return visible.filter(predicate)
     }
 
-    /// The active tab's live view of the stream, ignoring any freeze.
+    /// The active tab's live view of the stream, ignoring any freeze. Filtered, it is the cached
+    /// result — `body` runs on every keystroke and every stream update, and scanning the whole
+    /// buffer there is what made typing in the filter lag.
     private var liveFiltered: [LogEntry] {
-        filteredRows(minLevel: minLevel, query: appliedQuery)
+        isFiltering ? (filteredCache?.rows ?? []) : feed.snapshot
     }
 
     private var displayed: [LogEntry] {
@@ -133,12 +140,54 @@ internal struct LogsPane: View {
 
     private var matcher: TextMatcher { TextMatcher.from(findQuery) }
 
+    /// Find's matches, from the cache the find task keeps (see `findMatches`).
     private var matchIds: [Int64] {
-        guard findActive, findQuery.isActive else { return [] }
-        let m = matcher
-        // Android's tested rule: match against "tag message" joined by one space — per entry,
-        // not per occurrence.
-        return displayed.filter { m.matches("\($0.tag) \($0.message)") }.map(\.id)
+        findActive && findQuery.isActive ? cachedMatches : []
+    }
+
+    /// What the filter and find caches were computed from; when it changes they are recomputed.
+    private struct StreamKey: Hashable {
+        let count: Int
+        let lastId: Int64?
+        let filter: LogFilter
+    }
+
+    private struct FindKey: Hashable {
+        let count: Int
+        let lastId: Int64?
+        let paused: Bool
+        let query: SearchQuery?
+    }
+
+    /// Brings the filtered rows up to date off the main thread: incrementally for a stream update,
+    /// a full pass only when the filter changed. One pass at a time — a stream update arriving
+    /// mid-pass is picked up by the next one.
+    private func refilter() async {
+        let filter = LogFilter(minLevel: minLevel, query: appliedQuery)
+        guard isFiltering else { filteredCache = nil; return }
+        guard scanningFilter != filter else { return }
+        scanningFilter = filter
+        let snapshot = feed.snapshot
+        let previous = filteredCache
+        let result = await Task.detached(priority: .userInitiated) {
+            snapshot.refiltered(by: filter, previous: previous)
+        }.value
+        scanningFilter = nil
+        // Kept only if it is still the applied filter; otherwise the newer pass replaces it.
+        if LogFilter(minLevel: minLevel, query: appliedQuery) == filter { filteredCache = result }
+    }
+
+    /// Find's matches over what the pane shows, computed off the main thread.
+    private func findMatches(in rows: [LogEntry]) async {
+        guard findActive, findQuery.isActive else { cachedMatches = []; return }
+        let query = findQuery
+        let ids = await Task.detached(priority: .userInitiated) { () -> [Int64] in
+            let m = TextMatcher.from(query)
+            // Android's tested rule: match against "tag message" joined by one space — per entry,
+            // not per occurrence.
+            return rows.filter { m.matches("\($0.tag) \($0.message)") }.map(\.id)
+        }.value
+        if findQuery == query { cachedMatches = ids }
     }
 
     /// Regular width shows the line inspector beside the stream; compact presents a sheet.
@@ -250,6 +299,14 @@ internal struct LogsPane: View {
         }
         .onChange(of: autoscroll) { on in
             if on { jump = nil }
+        }
+        .task(id: StreamKey(count: feed.snapshot.count, lastId: feed.snapshot.last?.id,
+                            filter: LogFilter(minLevel: minLevel, query: appliedQuery))) {
+            await refilter()
+        }
+        .task(id: FindKey(count: all.count, lastId: all.last?.id, paused: isActiveTabPaused,
+                          query: findActive && findQuery.isActive ? findQuery : nil)) {
+            await findMatches(in: all)
         }
         .onDisappear {
             // A fold rebuilds the panes; this is what the rebuilt one starts from.
@@ -1086,6 +1143,9 @@ internal struct LogsPane: View {
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 280)
             }
+        } else if isFiltering, filteredCache?.filter != LogFilter(minLevel: minLevel, query: appliedQuery) {
+            // The first pass for this filter is still running off the main thread.
+            ProgressView("Filtering…")
         } else if isFiltering {
             EmptyStateView(
                 icon: "line.3.horizontal.decrease",
