@@ -467,6 +467,7 @@ private struct Label01: View {
 @available(iOS 17.0, *)
 public struct LogSensePauseCaptureIntent: LiveActivityIntent {
     public static var title: LocalizedStringResource = "Pause LogSense capture"
+    public static var isDiscoverable: Bool { false }
     public init() {}
     public func perform() async throws -> some IntentResult {
         await MainActor.run { LogSenseCore.shared?.pause() }
@@ -477,6 +478,7 @@ public struct LogSensePauseCaptureIntent: LiveActivityIntent {
 @available(iOS 17.0, *)
 public struct LogSenseResumeCaptureIntent: LiveActivityIntent {
     public static var title: LocalizedStringResource = "Resume LogSense capture"
+    public static var isDiscoverable: Bool { false }
     public init() {}
     public func perform() async throws -> some IntentResult {
         await MainActor.run { LogSenseCore.shared?.resume() }
@@ -487,6 +489,7 @@ public struct LogSenseResumeCaptureIntent: LiveActivityIntent {
 @available(iOS 17.0, *)
 public struct LogSenseStopCaptureIntent: LiveActivityIntent {
     public static var title: LocalizedStringResource = "Stop LogSense capture"
+    public static var isDiscoverable: Bool { false }
     public init() {}
     public func perform() async throws -> some IntentResult {
         await MainActor.run { LogSenseCore.shared?.stopCapture() }
@@ -498,6 +501,7 @@ public struct LogSenseStopCaptureIntent: LiveActivityIntent {
 @available(iOS 17.0, *)
 public struct LogSenseKeepRecordingIntent: LiveActivityIntent {
     public static var title: LocalizedStringResource = "Keep recording"
+    public static var isDiscoverable: Bool { false }
     public init() {}
     public func perform() async throws -> some IntentResult {
         await MainActor.run { LogSenseCore.shared?.markCrashesSeen() }
@@ -508,6 +512,7 @@ public struct LogSenseKeepRecordingIntent: LiveActivityIntent {
 @available(iOS 17.0, *)
 public struct LogSenseOpenIntent: LiveActivityIntent {
     public static var title: LocalizedStringResource = "Open LogSense"
+    public static var isDiscoverable: Bool { false }
     public static var openAppWhenRun: Bool = true
 
     @Parameter(title: "Destination")

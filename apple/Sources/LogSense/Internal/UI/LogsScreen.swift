@@ -14,6 +14,9 @@ internal struct LogsScreen: View {
     @Environment(\.horizontalSizeClass) private var hSize
 
     @State private var query = ""
+    /// `query` debounced — what the list actually filters by. Re-filtering the whole buffer and
+    /// re-diffing the list on every keystroke is what made typing lag in chatty hosts.
+    @State private var appliedQuery = ""
     @State private var minLevel: LogLevel = .debug
     @State private var viewMode: ViewMode = .standard
     @State private var wrap = true
@@ -68,8 +71,9 @@ internal struct LogsScreen: View {
         self.feed = core.feed
     }
 
-    // ponytail: filtering re-runs on each ~1 Hz publish over the whole buffer. Fine at real
-    // volumes for a debug tool; move off-main behind a task if it ever shows in a profile.
+    // ponytail: filtering runs on the main thread over the whole buffer, on each ~1 Hz publish
+    // and once per debounced query. Rendering is windowed (renderSlice), so this scan is the
+    // only full-buffer cost left; move it off-main behind a task if it ever shows in a profile.
     private func filteredRows(minLevel: LogLevel, query: String) -> [LogEntry] {
         let visible = feed.snapshot
         if query.isEmpty && minLevel == .debug { return visible }
@@ -79,7 +83,7 @@ internal struct LogsScreen: View {
 
     /// The active tab's live view of the stream, ignoring any freeze.
     private var liveFiltered: [LogEntry] {
-        filteredRows(minLevel: minLevel, query: query)
+        filteredRows(minLevel: minLevel, query: appliedQuery)
     }
 
     private var displayed: [LogEntry] {
@@ -129,16 +133,16 @@ internal struct LogsScreen: View {
     }
 
     /// SwiftUI's List re-diffs every identified row on each publish — at the 50k buffer cap
-    /// that alone is the lag. Rendering is windowed to the newest rows; the full buffer still
-    /// feeds the status counts, filter, find, export and crash context, and filtering or
-    /// finding always sees its whole result set.
+    /// that alone is the lag. Rendering is windowed to the newest rows, filtered or not (a
+    /// one-letter filter matches nearly the whole buffer); the full buffer still feeds the
+    /// status counts, filter, find, export and crash context. Find stays unwindowed so every
+    /// match it steps to is in the list.
     private static let renderWindow = 2_000
 
     var body: some View {
         let all = displayed
         let matches = matchIds
-        let windowed = !isFiltering && !findActive && all.count > Self.renderWindow
-        let rows = windowed ? Array(all.suffix(Self.renderWindow)) : all
+        let slice = all.renderSlice(window: Self.renderWindow, findActive: findActive)
         NavigationStack {
             VStack(spacing: 0) {
                 header(rows: all)
@@ -147,7 +151,7 @@ internal struct LogsScreen: View {
                 if DebuggerState.logsDiverted || state.storeSilent { debuggerBanner.padding(.top, 8) }
                 if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                 if state.status == .paused { pausedBanner.padding(.top, 8) }
-                content(rows: rows, hiddenOlder: all.count - rows.count, matches: matches)
+                content(rows: slice.rows, hiddenOlder: slice.hiddenOlder, matches: matches)
             }
             // The custom header replaces the bar visually, but the title still feeds the pushed
             // screen's "‹ Logs" back item — continuing the task pushes, per the design.
@@ -173,7 +177,14 @@ internal struct LogsScreen: View {
                 selectedEntry = entry
             }
         }
-        .onChange(of: query) { _ in writeBackActiveTab() }
+        .task(id: query) {
+            // Clearing applies at once (it's the cheap direction); typing settles first.
+            if !query.isEmpty {
+                do { try await Task.sleep(nanoseconds: 150_000_000) } catch { return }
+            }
+            appliedQuery = query
+        }
+        .onChange(of: appliedQuery) { _ in writeBackActiveTab() }
         .onChange(of: minLevel) { _ in writeBackActiveTab() }
         .onChange(of: viewMode) { _ in writeBackActiveTab() }
         .sheet(item: sheetSelection) { entry in
@@ -226,6 +237,7 @@ internal struct LogsScreen: View {
         }
         activeTabId = id
         query = tab.filter.query
+        appliedQuery = tab.filter.query
         minLevel = tab.filter.minLevel
         viewMode = tab.viewMode
         if switching, !autoscroll, let anchor = scrollAnchor[id] {
@@ -236,7 +248,7 @@ internal struct LogsScreen: View {
     /// The active tab owns the filter state — edits write through and persist, like Android.
     private func writeBackActiveTab() {
         guard let index = tabs.firstIndex(where: { $0.id == activeTabId }) else { return }
-        tabs[index].filter = LogFilter(minLevel: minLevel, query: query)
+        tabs[index].filter = LogFilter(minLevel: minLevel, query: appliedQuery)
         tabs[index].viewMode = viewMode
         Prefs.setSavedFilters(tabs)
     }
@@ -564,7 +576,7 @@ internal struct LogsScreen: View {
         PulsingDot(color: color, active: pulsing)
     }
 
-    private var isFiltering: Bool { !query.isEmpty || minLevel != .debug }
+    private var isFiltering: Bool { !appliedQuery.isEmpty || minLevel != .debug }
 
     private var activeTabName: String {
         tabs.first { $0.id == activeTabId }?.name ?? "All"
@@ -678,7 +690,7 @@ internal struct LogsScreen: View {
         } else if isFiltering {
             EmptyStateView(
                 icon: "line.3.horizontal.decrease",
-                title: "No lines match" + (query.isEmpty ? "" : " “\(query)”"),
+                title: "No lines match" + (appliedQuery.isEmpty ? "" : " “\(appliedQuery)”"),
                 body: "Capture is still running. Clear the filter, or lower the minimum level.",
                 actionLabel: "Clear filter",
                 action: { query = ""; minLevel = .debug }
@@ -705,7 +717,9 @@ internal struct LogsScreen: View {
                 ScrollViewReader { proxy in
                     List {
                         if hiddenOlder > 0 {
-                            Text("Latest \(rows.count.formatted()) shown · \(hiddenOlder.formatted()) older lines stay in the buffer — filter to search them")
+                            Text(isFiltering
+                                 ? "Latest \(rows.count.formatted()) of \((rows.count + hiddenOlder).formatted()) matches shown — narrow the filter to see older ones"
+                                 : "Latest \(rows.count.formatted()) shown · \(hiddenOlder.formatted()) older lines stay in the buffer — filter to search them")
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity, alignment: .center)

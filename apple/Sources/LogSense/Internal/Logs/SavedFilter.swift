@@ -32,4 +32,11 @@ extension Array where Element == LogEntry {
         }
         return self[low...]
     }
+
+    /// The rows the Logs list renders: the newest `window`, plus how many older ones that hides.
+    /// Find gets everything, so each match it steps to is in the list.
+    func renderSlice(window: Int, findActive: Bool) -> (rows: [LogEntry], hiddenOlder: Int) {
+        guard !findActive, count > window else { return (self, 0) }
+        return (Array(suffix(window)), count - window)
+    }
 }
