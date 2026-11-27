@@ -11,7 +11,9 @@ import MetricKit
 internal final class MetricKitCollector: NSObject, MXMetricManagerSubscriber {
 
     /// A crash/hang record ready to store. Called on MetricKit's queue.
-    var onCrash: ((CrashRecord) -> Void)?
+    /// Every crash and hang report in one MetricKit delivery, together — so the owner stores them
+    /// in one pass and alerts at most once. Called on MetricKit's queue.
+    var onDiagnostics: (([CrashRecord]) -> Void)?
     /// CPU/disk-write exceptions are worth surfacing but aren't faults to file — they land as
     /// signals (wired in the signals phase). (signalId, timestampMs, detail).
     var onResourceDiagnostic: ((Signal, Int64, String) -> Void)?
@@ -27,13 +29,15 @@ internal final class MetricKitCollector: NSObject, MXMetricManagerSubscriber {
     }
 
     func didReceive(_ payloads: [MXDiagnosticPayload]) {
+        var reports: [CrashRecord] = []
+        defer { if !reports.isEmpty { onDiagnostics?(reports) } }
         for payload in payloads {
             let ts = Int64(payload.timeStampEnd.timeIntervalSince1970 * 1000)
             for crash in payload.crashDiagnostics ?? [] {
-                onCrash?(record(crash, ts: ts))
+                reports.append(record(crash, ts: ts))
             }
             for hang in payload.hangDiagnostics ?? [] {
-                onCrash?(record(hang, ts: ts))
+                reports.append(record(hang, ts: ts))
             }
             for cpu in payload.cpuExceptionDiagnostics ?? [] {
                 let detail = "Total CPU \(cpu.totalCPUTime), sampled \(cpu.totalSampledTime)"

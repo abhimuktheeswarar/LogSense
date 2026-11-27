@@ -67,6 +67,17 @@ internal enum Prefs {
     }
 
     /// The newest crash timestamp the user has seen — the activity stays red past this.
+    private static let firstStartKey = "com.msabhi.logsense.firstStartMs"
+
+    /// When LogSense first started on this install — reports older than this are history that
+    /// MetricKit hands over late, stored but never announced. Set once, on first read.
+    static func firstStartMs(now: Int64) -> Int64 {
+        let stored = Int64(UserDefaults.standard.double(forKey: firstStartKey))
+        if stored > 0 { return stored }
+        UserDefaults.standard.set(Double(now), forKey: firstStartKey)
+        return now
+    }
+
     static func lastSeenCrashMs() -> Int64 {
         Int64(UserDefaults.standard.double(forKey: lastSeenCrashKey))
     }

@@ -97,6 +97,19 @@ internal final class SessionStore {
 
     @discardableResult
     func add(_ record: CrashRecord) -> StoredCrash {
+        let stored = write(record)
+        enforceCrashCap()
+        return stored
+    }
+
+    /// A whole MetricKit delivery: every file written, then the cap enforced once — not a full
+    /// re-list of the store per report.
+    func add(_ records: [CrashRecord]) {
+        for record in records { _ = write(record) }
+        enforceCrashCap()
+    }
+
+    private func write(_ record: CrashRecord) -> StoredCrash {
         var record = record
         let sessionGone = record.sessionId != earlierSessionId
             && !fm.fileExists(atPath: dir(forSession: record.sessionId).path)
@@ -108,7 +121,6 @@ internal final class SessionStore {
         if let data = try? JSONEncoder().encode(record) {
             try? data.write(to: url)
         }
-        enforceCrashCap()
         // Resolved path, matching what directory listing returns — ids must compare equal.
         return StoredCrash(id: url.resolvingSymlinksInPath().path, record: record)
     }

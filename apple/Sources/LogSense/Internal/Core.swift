@@ -92,6 +92,10 @@ internal final class LogSenseCore {
     private var crashesSinceLaunch = 0
     private var newestCrashMs: Int64 = 0
     private var latestCrashSummary: (type: String, title: String, detail: String, topFrame: String, thread: String?, timeMs: Int64)?
+    /// When the last crash alert went out — alerts are spaced (see `CrashAlertPolicy`).
+    private var lastAlertMs: Int64?
+    /// LogSense's first start on this install; older reports are history, never announced.
+    private lazy var firstStartMs = Prefs.firstStartMs(now: Int64(Date().timeIntervalSince1970 * 1000))
     let sessionStartDate = Date()
     /// Read from the poll loop, written from the UI. Worst case a stale read delays one publish
     /// by a poll tick — not worth a lock.
@@ -226,6 +230,10 @@ internal final class LogSenseCore {
 
     private func startCrashPipeline() {
         guard let store = sessionStore else { return }
+        // Pin "first start" now, before MetricKit's first delivery can arrive with its backlog.
+        statsLock.lock()
+        _ = firstStartMs
+        statsLock.unlock()
         let deviceInfo = DeviceInfo.summary(sessionStartedAtMs: store.sessionStartedAt(store.currentSessionId))
         if config.captureCrashes {
             CrashHandler.install(CrashHandler.Context(
@@ -238,7 +246,7 @@ internal final class LogSenseCore {
         }
         #if os(iOS)
         let collector = MetricKitCollector(deviceInfo: deviceInfo)
-        collector.onCrash = { [weak self] record in self?.storeCrash(record, notify: true) }
+        collector.onDiagnostics = { [weak self] records in self?.storeDiagnostics(records) }
         collector.onResourceDiagnostic = { [weak self] signal, ts, detail in
             self?.signals.record(signal, timeMs: ts, detail: detail)
         }
@@ -258,11 +266,8 @@ internal final class LogSenseCore {
                     !state.events.contains(where: { $0.id == loaded.id })
                 }
             }
-            if let newest = ingested.first ?? all.first, !ingested.isEmpty {
-                self.postCrashNotification(newest.record)
-                #if os(iOS)
-                self.noteCrashCaptured(newest.record)
-                #endif
+            if !ingested.isEmpty {
+                self.announce(ingested.map(\.record))
             }
         }
     }
@@ -283,14 +288,32 @@ internal final class LogSenseCore {
         Task { @MainActor [state] in state.events = events }
     }
 
-    private func storeCrash(_ record: CrashRecord, notify: Bool) {
+    /// One MetricKit delivery: drop what is already stored, store the rest in one pass, publish
+    /// once, and alert at most once (see `CrashAlertPolicy` for why).
+    private func storeDiagnostics(_ records: [CrashRecord]) {
         guard let store = sessionStore else { return }
-        store.add(record)
+        let existing = Set(store.loadCrashes().map { CrashAlertPolicy.key($0.record) })
+        let fresh = CrashAlertPolicy.fresh(records, existingKeys: existing)
+        guard !fresh.isEmpty else { return }
+        store.add(fresh)
         let all = store.loadCrashes()
         Task { @MainActor [state] in state.crashes = all }
-        if notify { postCrashNotification(record) }
+        announce(fresh)
+    }
+
+    /// Counts what is new and, when the policy says so, raises one notification and one Live
+    /// Activity alert for the whole batch. Hangs and history update the counts silently.
+    private func announce(_ records: [CrashRecord]) {
+        let nowMs = Int64(Date().timeIntervalSince1970 * 1000)
+        statsLock.lock()
+        let firstStart = firstStartMs
+        let alert = CrashAlertPolicy.alert(for: records, firstStartMs: firstStart, nowMs: nowMs, lastAlertMs: lastAlertMs)
+        if alert != nil { lastAlertMs = nowMs }
+        statsLock.unlock()
+        let current = CrashAlertPolicy.current(records, firstStartMs: firstStart)
+        if let alert { postCrashNotification(alert) }
         #if os(iOS)
-        noteCrashCaptured(record)
+        noteCrashesCaptured(current, alert: alert)
         #endif
     }
 
@@ -299,15 +322,15 @@ internal final class LogSenseCore {
     /// Tapping opens the app normally; LogSense deliberately does not touch the host's
     /// UNUserNotificationCenter delegate, so there is no deep link — hijacking the delegate would
     /// break the host's own push handling, which is a far worse trade.
-    private func postCrashNotification(_ record: CrashRecord) {
+    private func postCrashNotification(_ alert: CrashAlertPolicy.Alert) {
         #if os(iOS)
         guard config.showCrashNotification else { return }
         let center = UNUserNotificationCenter.current()
         center.getNotificationSettings { settings in
             guard settings.authorizationStatus == .authorized else { return }
             let content = UNMutableNotificationContent()
-            content.title = record.exceptionClass ?? (record.type == "HANG" ? "Hang" : "Crash")
-            content.body = record.message ?? "Open LogSense for the report."
+            content.title = alert.title
+            content.body = alert.body
             content.subtitle = "LogSense"
             center.add(UNNotificationRequest(
                 identifier: Self.crashNotificationId, content: content, trigger: nil
@@ -465,27 +488,26 @@ internal final class LogSenseCore {
         }
     }
 
-    private func noteCrashCaptured(_ record: CrashRecord) {
-        let frame = appFrame(stacktrace: record.stacktrace, appBinary: appBinary) ?? ""
+    /// The Live Activity's side of a batch: counts always (silently), and the red crash takeover
+    /// plus one alert only when the batch earned an alert.
+    private func noteCrashesCaptured(_ current: [CrashRecord], alert: CrashAlertPolicy.Alert?) {
+        guard !current.isEmpty || alert != nil else { return }
+        let alerted = alert == nil ? nil : current.filter { $0.type != "HANG" }.max(by: { $0.timestamp < $1.timestamp })
         statsLock.lock()
-        crashesSinceLaunch += 1
-        newestCrashMs = max(newestCrashMs, record.timestamp)
-        latestCrashSummary = (
-            type: record.type,
-            title: record.exceptionClass ?? (record.type == "HANG" ? "Hang" : "Crash"),
-            detail: record.message ?? "",
-            topFrame: frame,
-            thread: record.threadName,
-            timeMs: record.timestamp
-        )
-        statsLock.unlock()
-        syncLiveActivity(
-            immediate: true,
-            alert: (
-                title: record.exceptionClass ?? (record.type == "HANG" ? "Hang captured" : "Crash captured"),
-                body: record.message ?? "Open LogSense for the report."
+        crashesSinceLaunch += current.count
+        if let record = alerted {
+            newestCrashMs = max(newestCrashMs, record.timestamp)
+            latestCrashSummary = (
+                type: record.type,
+                title: record.exceptionClass ?? "Crash",
+                detail: record.message ?? "",
+                topFrame: appFrame(stacktrace: record.stacktrace, appBinary: appBinary) ?? "",
+                thread: record.threadName,
+                timeMs: record.timestamp
             )
-        )
+        }
+        statsLock.unlock()
+        syncLiveActivity(immediate: true, alert: alert.map { (title: $0.title, body: $0.body) })
     }
     #endif
 
