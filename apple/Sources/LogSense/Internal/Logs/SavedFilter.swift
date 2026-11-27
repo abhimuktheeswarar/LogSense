@@ -34,9 +34,30 @@ extension Array where Element == LogEntry {
     }
 
     /// The rows the Logs list renders: the newest `window`, plus how many older ones that hides.
-    /// Find gets everything, so each match it steps to is in the list.
-    func renderSlice(window: Int, findActive: Bool) -> (rows: [LogEntry], hiddenOlder: Int) {
+    /// Find gets everything, so each match it steps to is in the list. A jump (`anchorId`, the
+    /// other half synced to a moment) centres the window on that line instead, so it is rendered
+    /// even when it is far older than the newest `window` lines.
+    func renderSlice(window: Int, findActive: Bool, anchorId: Int64? = nil) -> (rows: [LogEntry], hiddenOlder: Int) {
         guard !findActive, count > window else { return (self, 0) }
+        if let anchorId, let anchor = firstIndex(where: { $0.id == anchorId }) {
+            let start = Swift.max(0, Swift.min(anchor - window / 2, count - window))
+            return (Array(self[start..<(start + window)]), start)
+        }
         return (Array(suffix(window)), count - window)
+    }
+
+    /// The line closest in time to `timeMs` — the other half of an open iPhone Duo jumps there.
+    /// Entries arrive in time order, so this is a binary search; ties go to the earlier line.
+    func nearestIndex(toTimeMs timeMs: Int64) -> Int? {
+        guard !isEmpty else { return nil }
+        var low = 0
+        var high = count
+        while low < high {
+            let mid = (low + high) / 2
+            if self[mid].timeMs < timeMs { low = mid + 1 } else { high = mid }
+        }
+        if low == count { return count - 1 }
+        if low == 0 { return 0 }
+        return timeMs - self[low - 1].timeMs <= self[low].timeMs - timeMs ? low - 1 : low
     }
 }

@@ -21,7 +21,7 @@ internal enum LeakWatch {
         guard objc_getAssociatedObject(object, &watchKey) == nil else { return }
         objc_setAssociatedObject(object, &watchKey, true, .OBJC_ASSOCIATION_RETAIN)
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak object] in
-            guard let object else { return } // deallocated on time — the healthy outcome
+            guard object != nil else { return } // deallocated on time — the healthy outcome
             onLeak?("\(name) is still in memory \(Int(timeout))s after it should have deallocated — look for a retain cycle or a lingering strong reference")
         }
     }

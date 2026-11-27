@@ -44,8 +44,42 @@ internal enum LogSenseWindow {
 
     static func dismiss() {
         LogSenseCore.shared?.setUIVisible(false)
+        setBeside(false)
+        sceneObservation = nil
         window?.isHidden = true
         window = nil
+    }
+
+    private static var sceneObservation: NSKeyValueObservation?
+
+    /// iPhone Duo, open: shrink LogSense to the region after the fold so the host app stays live
+    /// and touchable on the other side — tap there, read the lines it caused here. Our own window
+    /// is resized, so this works for any host, with or without multiple-scene support.
+    static func dockBeside(division: CGRect?) {
+        guard let window, let windowScene = window.windowScene,
+              let frame = DuoGeometry.besideFrame(bounds: windowScene.coordinateSpace.bounds, division: division)
+        else { return }
+        window.frame = frame
+        setBeside(true)
+        // Folding (or any other resize) changes the scene; the dock no longer means anything then,
+        // so LogSense goes back to covering the app — the closed layout.
+        sceneObservation = windowScene.observe(\.effectiveGeometry, options: [.new]) { _, _ in
+            Task { @MainActor in expand() }
+        }
+    }
+
+    /// Back to covering the whole app.
+    static func expand() {
+        sceneObservation = nil
+        guard let window, let windowScene = window.windowScene else { return }
+        window.frame = windowScene.coordinateSpace.bounds
+        setBeside(false)
+    }
+
+    private static func setBeside(_ beside: Bool) {
+        guard let state = LogSenseCore.shared?.state, state.besideHost != beside else { return }
+        if beside { state.besideSinceMs = Int64(Date().timeIntervalSince1970 * 1000) }
+        state.besideHost = beside
     }
 
     /// Hosts customize UIKit chrome process-wide for their own brand — global appearance

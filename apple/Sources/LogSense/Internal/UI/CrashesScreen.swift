@@ -9,6 +9,10 @@ internal struct CrashesScreen: View {
     @ObservedObject private var state: LogSenseState
     @State private var confirmClear = false
     @State private var showSettings = false
+    /// The open report. Closed, it is pushed; on an open iPhone Duo it sits beside the list —
+    /// the same selection either way, so folding keeps the report you were reading.
+    @State private var selectedId: String?
+    @Environment(\.duoPosture) private var duo
 
     init(core: LogSenseCore, onDone: (() -> Void)? = nil) {
         self.core = core
@@ -27,19 +31,30 @@ internal struct CrashesScreen: View {
         )
     }
 
+    private var selectedCrash: StoredCrash? {
+        selectedId.flatMap { id in state.crashes.first { $0.id == id } }
+    }
+
+    /// Closed: the selection is the pushed report. Open: nothing is pushed — the report pane shows it.
+    private var path: Binding<[StoredCrash]> {
+        Binding(
+            get: { duo.isOpen ? [] : selectedCrash.map { [$0] } ?? [] },
+            set: { selectedId = $0.last?.id }
+        )
+    }
+
     var body: some View {
-        NavigationStack {
-            // In-layout like Signals, not a top safeAreaInset — an inset swallows the large title.
-            VStack(spacing: 0) {
+        NavigationStack(path: path) {
+            beside(list: VStack(spacing: 0) {
+                // In-layout like Signals, not a top safeAreaInset — an inset swallows the large title.
                 LiveStatusRow(status: state.status, detail: "\(state.crashes.count.formatted()) captured")
+                if duo.hingeClosed, !state.crashes.isEmpty { unfoldHint }
                 crashesList
-            }
+            })
             .navigationTitle("Crashes")
             .onAppear { core.markCrashesSeen() }
             .navigationDestination(for: StoredCrash.self) { crash in
-                CrashReportScreen(crash: crash, appBinary: core.appBinary)
-                    // Opening a report reads it, like mail; the swipe covers without opening.
-                    .onAppear { core.setCrashRead(crash, true) }
+                report(crash)
             }
             .navigationDestination(isPresented: $showSettings) {
                 SettingsScreen(core: core)
@@ -78,6 +93,56 @@ internal struct CrashesScreen: View {
         }
     }
 
+    /// Open iPhone Duo: the list on one side of the fold, the selected report on the other.
+    @ViewBuilder
+    private func beside(list: some View) -> some View {
+        if duo.isOpen {
+            FoldSplit {
+                list
+            } second: {
+                if let crash = selectedCrash {
+                    report(crash, embedded: true).id(crash.id)
+                } else {
+                    EmptyStateView(
+                        icon: "doc.text.magnifyingglass",
+                        title: "No report selected",
+                        body: "Choose a crash on the left to read it here.",
+                        actionLabel: nil, action: nil
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+        } else {
+            list
+        }
+    }
+
+    private func report(_ crash: StoredCrash, embedded: Bool = false) -> some View {
+        CrashReportScreen(crash: crash, appBinary: core.appBinary, showInLogs: showInLogs(crash), embedded: embedded)
+            // Opening a report reads it, like mail; the swipe covers without opening.
+            .onAppear { core.setCrashRead(crash, true) }
+    }
+
+    /// The lines around the crash, in the Logs tab — offered only while the buffer still holds
+    /// that moment (crashes from earlier sessions keep their own log context in the report).
+    private func showInLogs(_ crash: StoredCrash) -> (() -> Void)? {
+        guard let oldest = core.feed.snapshot.first?.timeMs, oldest <= crash.record.timestamp else { return nil }
+        return {
+            state.revealTimeMs = crash.record.timestamp
+            state.requestedTab = .logs
+        }
+    }
+
+    /// Closed iPhone Duo: a quiet pointer to the open layout, where the report sits beside its list.
+    private var unfoldHint: some View {
+        Label("Open iPhone Duo to read a report beside this list", systemImage: "rectangle.split.2x1")
+            .font(.system(size: 12.5))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 16)
+            .padding(.bottom, 6)
+    }
+
     @ViewBuilder
     private var crashesList: some View {
         if state.crashes.isEmpty {
@@ -98,6 +163,8 @@ internal struct CrashesScreen: View {
                             NavigationLink(value: crash) {
                                 CrashRow(crash: crash, unread: !isRead)
                             }
+                            .listRowBackground(duo.isOpen && crash.id == selectedId
+                                ? Color.accentColor.opacity(0.14) : nil)
                             // Custom swipe actions suppress onDelete's built-in swipe, so the
                             // delete lives here explicitly, on its usual trailing edge.
                             .swipeActions(edge: .trailing) {
@@ -202,6 +269,9 @@ internal struct TypeBadge: View {
 internal struct CrashReportScreen: View {
     let crash: StoredCrash
     let appBinary: String
+    var showInLogs: (() -> Void)? = nil
+    /// Beside the list on an open iPhone Duo: the list's stack owns the title.
+    var embedded = false
 
     var body: some View {
         let record = crash.record
@@ -289,7 +359,15 @@ internal struct CrashReportScreen: View {
                 }
 
                 if !record.logContext.isEmpty {
-                    sectionTitle("Log context")
+                    HStack {
+                        sectionTitle("Log context")
+                        Spacer()
+                        if let showInLogs {
+                            Button("Show in Logs", action: showInLogs)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .padding(.top, 20)
+                        }
+                    }
                     card {
                         ScrollView(.horizontal, showsIndicators: false) {
                             Text(record.logContext)
@@ -301,8 +379,7 @@ internal struct CrashReportScreen: View {
             }
             .padding(16)
         }
-        .navigationTitle("Crash Report")
-        .navigationBarTitleDisplayMode(.inline)
+        .modifier(PushedTitle(enabled: !embedded))
         .toolbar {
             ShareLink(item: shareText(record, triage: read)) {
                 Image(systemName: "square.and.arrow.up")
@@ -347,5 +424,19 @@ internal struct CrashReportScreen: View {
 
 extension StoredCrash: Hashable {
     func hash(into hasher: inout Hasher) { hasher.combine(id) }
+}
+/// The pushed report's inline title; skipped beside the list, whose stack keeps "Crashes".
+private struct PushedTitle: ViewModifier {
+    let enabled: Bool
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content
+                .navigationTitle("Crash Report")
+                .navigationBarTitleDisplayMode(.inline)
+        } else {
+            content
+        }
+    }
 }
 #endif

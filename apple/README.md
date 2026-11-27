@@ -17,6 +17,8 @@ trouble patterns — built so the tool itself never noticeably burdens the host 
 ## Supports
 
 - **iOS 16.0+** (Live Activity 16.2+; its buttons 17+). iPhone and iPad; light and dark.
+- **Built for iOS 27.1 / Xcode 27.1**, and adapts to **iPhone Duo** (below); every earlier iOS
+  keeps the layouts it has always had.
 - **Simulator first-class** — most day-to-day iOS development happens there, so capture,
   performance containment and the demo are all validated on the simulator (and on device).
 - **Swift 5.9+ / Xcode 15+**, pure Swift + SwiftUI, **zero dependencies**.
@@ -26,11 +28,11 @@ trouble patterns — built so the tool itself never noticeably burdens the host 
 ## Install — Swift Package Manager only
 
 There is no CocoaPods podspec and none is planned. In Xcode: **File ▸ Add Package
-Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.6.14`. Or in a
+Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.0`. Or in a
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.6.14")
+.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.0")
 ```
 
 The manifest lives at the repository root and points into `apple/` — add the package from the
@@ -121,6 +123,31 @@ equivalent. The entry points, closest-first:
 - **Programmatic**: `LogSense.present()` (its own overlay window above your app), or embed
   `LogSenseView` in a debug menu or hidden gesture of your choosing. LogSense deliberately claims
   no global gesture: shake, in particular, is often taken.
+
+## iPhone Duo (iOS 27.1+)
+
+Layouts follow the fold region and hinge the system reports — never the device model — so a
+non-folding device never sees them.
+
+- **Closed** — the phone layout, with the tab bar and Logs' Pause / Find / More on the
+  right-hand rail. Crashes points out that unfolding puts a report beside its list.
+- **Open** — the extra width becomes a second pane, split exactly on the crease (nothing tappable
+  sits on it):
+  - **Logs: two tabs, one per half**, each with its own filter, level, density, find and freeze.
+    The second half opens on another tab (an "Errors" tab is made once if there is only All);
+    picking the tab the other half shows swaps them. **Tap a line to move the other half to the
+    same moment**, with *Back to live* to return; long-press → *Inspect Line* opens the line.
+    *Split Across Fold* in the overflow menu switches back to one pane.
+  - **Crashes: the report beside its list**; *Show in Logs* jumps to the crash's moment.
+- **Beside the host** — overflow menu → *Open Beside <app>* docks LogSense on the far side of the
+  fold while the app stays live and touchable on the near side: tap there, read the lines it caused
+  here (fresh lines carry a fading accent edge; the newest analytics event shows as a card).
+  *Expand to Full Screen* undocks; folding always returns to the full cover.
+- **Seated** — half-open with the fold running across: the stream on the upper half, the controls
+  on the flat lower half: find always open with thumb-sized steppers, minimum level as one-tap
+  segments, Pause / Latest / Clear.
+
+Folding and unfolding keep your place: the tab each half shows, find, and the line you were on.
 
 ## Analytics events
 
@@ -296,7 +323,8 @@ Live Activity toggle, theme and accent. See the doc comments in `LogSenseConfig.
 `apple/Demo/LogSenseDemo.xcodeproj` — one button per capture claim: every level, NSLog, print,
 private-vs-public interpolation, burst, analytics payload shapes, signal lines, and both crash
 paths. Scripted-run hooks: launch env `LOGSENSE_AUTO_OPEN=1` opens LogSense after launch,
-`LOGSENSE_CRASH_AFTER=1` raises a crash a few seconds in. Remember the limitation above: launch
+`LOGSENSE_CRASH_AFTER=1` raises a crash a few seconds in, `LOGSENSE_START_TAB=events|crashes|signals`
+opens on that tab, `LOGSENSE_START_BESIDE=1` docks beside the demo on an open iPhone Duo. Remember the limitation above: launch
 the demo from the simulator's home screen, not from Xcode, to see full capture.
 
 ## Development

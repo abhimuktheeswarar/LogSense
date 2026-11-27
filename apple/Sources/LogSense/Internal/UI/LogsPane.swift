@@ -4,12 +4,20 @@ import SwiftUI
 /// The live stream, per the design: LOGSENSE caption over the host's name, Live pulse + counts,
 /// filter field with a min-level menu, Wrap/Autoscroll pills, Standard/Compact/Raw density, find
 /// bar above the keyboard, paused banner, and the waiting/no-match states.
-internal struct LogsScreen: View {
+internal struct LogsPane: View {
     let core: LogSenseCore
     let onDone: (() -> Void)?
+    let role: LogsPaneRole
+    /// One of two halves on an open iPhone Duo: a tap syncs the other half to that moment and
+    /// the inspector opens as a sheet, since there is no room beside a half.
+    let isSplit: Bool
+    /// The split on/off switch, offered in the primary half's overflow menu while open.
+    let splitEnabled: Binding<Bool>?
 
     @ObservedObject private var state: LogSenseState
     @ObservedObject private var feed: LogsFeed
+    @ObservedObject private var store: LogTabsStore
+    @Environment(\.duoPosture) private var duo
     @Environment(\.colorScheme) private var scheme
     @Environment(\.horizontalSizeClass) private var hSize
 
@@ -43,14 +51,19 @@ internal struct LogsScreen: View {
     }
 
     // Android's tab model: each tab owns its filter, min level and density, persisted across runs.
-    // "All" (id 0) is the one tab that can't be closed — a stable home to come back to.
-    @State private var tabs: [SavedFilter] = LogsScreen.loadTabs()
-    @State private var activeTabId: Int64 = 0
-    /// Per-tab pause: a **view freeze**, not a capture pause — runtime-only, like Android's
-    /// `LogTab.paused`. The frozen rows are value copies, so they outlive buffer eviction.
-    @State private var pausedTabs: Set<Int64> = []
-    @State private var frozen: [Int64: [LogEntry]] = [:]
+    // The tabs live in `LogTabsStore`, shared by both halves of an open Duo.
+    private var activeTabId: Int64 { store.activeTab[role] ?? 0 }
     @State private var tabForm: TabFormMode?
+    /// The other half asked this one to show a moment; the banner offers the way back to live.
+    @State private var jump: Jump?
+    /// The beside-the-host event card the developer closed.
+    @State private var dismissedEventId: String?
+
+    private struct Jump: Equatable {
+        let timeMs: Int64
+        let fromTab: String
+        let anchorId: Int64
+    }
 
     private enum TabFormMode: Identifiable {
         case new
@@ -64,11 +77,34 @@ internal struct LogsScreen: View {
         }
     }
 
-    init(core: LogSenseCore, onDone: (() -> Void)?) {
+    init(
+        core: LogSenseCore,
+        onDone: (() -> Void)?,
+        store: LogTabsStore,
+        role: LogsPaneRole = .primary,
+        isSplit: Bool = false,
+        splitEnabled: Binding<Bool>? = nil
+    ) {
         self.core = core
         self.onDone = onDone
         self.state = core.state
         self.feed = core.feed
+        self.store = store
+        self.role = role
+        self.isSplit = isSplit
+        self.splitEnabled = splitEnabled
+        // A fold or unfold rebuilds the pane; it comes back with what it had, at the line it was on.
+        let memory = store.memory[role] ?? LogTabsStore.PaneMemory()
+        let tab = store.tab(for: role)
+        _query = State(initialValue: tab?.filter.query ?? "")
+        _appliedQuery = State(initialValue: tab?.filter.query ?? "")
+        _minLevel = State(initialValue: tab?.filter.minLevel ?? .debug)
+        _viewMode = State(initialValue: tab?.viewMode ?? .standard)
+        _findActive = State(initialValue: memory.findActive)
+        _findQuery = State(initialValue: memory.findQuery)
+        _autoscroll = State(initialValue: memory.autoscroll)
+        _wrap = State(initialValue: memory.wrap)
+        _restoreAnchor = State(initialValue: memory.autoscroll ? nil : memory.topLineId)
     }
 
     // ponytail: filtering runs on the main thread over the whole buffer, on each ~1 Hz publish
@@ -87,19 +123,11 @@ internal struct LogsScreen: View {
     }
 
     private var displayed: [LogEntry] {
-        if pausedTabs.contains(activeTabId) { return frozen[activeTabId] ?? [] }
+        if store.pausedTabs.contains(activeTabId) { return store.frozen[activeTabId] ?? [] }
         return liveFiltered
     }
 
-    private var isActiveTabPaused: Bool { pausedTabs.contains(activeTabId) }
-
-    private static func loadTabs() -> [SavedFilter] {
-        var loaded = Prefs.savedFilters()
-        if !loaded.contains(where: { $0.id == 0 }) {
-            loaded.insert(SavedFilter(id: 0, name: "All"), at: 0)
-        }
-        return loaded
-    }
+    private var isActiveTabPaused: Bool { store.pausedTabs.contains(activeTabId) }
 
     private var matcher: TextMatcher { TextMatcher.from(findQuery) }
 
@@ -114,9 +142,13 @@ internal struct LogsScreen: View {
     /// Regular width shows the line inspector beside the stream; compact presents a sheet.
     private var isRegular: Bool { hSize == .regular }
 
+    /// The line inspector sits beside the stream only with room to spare: one regular-width pane.
+    /// Halves and the seated layout open it as a sheet.
+    private var sideInspector: Bool { isRegular && !isSplit && !duo.seated }
+
     private var sheetSelection: Binding<LogEntry?> {
         Binding(
-            get: { isRegular ? nil : selectedEntry },
+            get: { sideInspector ? nil : selectedEntry },
             set: { selectedEntry = $0 }
         )
     }
@@ -142,38 +174,91 @@ internal struct LogsScreen: View {
     var body: some View {
         let all = displayed
         let matches = matchIds
-        let slice = all.renderSlice(window: Self.renderWindow, findActive: findActive)
-        NavigationStack {
-            VStack(spacing: 0) {
-                header(rows: all)
-                tabsRow
-                filterBand
-                if DebuggerState.logsDiverted || state.storeSilent { debuggerBanner.padding(.top, 8) }
-                if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
-                if state.status == .paused { pausedBanner.padding(.top, 8) }
-                content(rows: slice.rows, hiddenOlder: slice.hiddenOlder, matches: matches)
-            }
+        let slice = all.renderSlice(window: Self.renderWindow, findActive: findActive, anchorId: jump?.anchorId)
+        stack {
+            arranged(
+                stream: VStack(spacing: 0) {
+                    header(rows: all)
+                    tabsRow
+                    filterBand
+                    if DebuggerState.logsDiverted || state.storeSilent { debuggerBanner.padding(.top, 8) }
+                    if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
+                    if state.status == .paused { pausedBanner.padding(.top, 8) }
+                    if let jump { jumpBanner(jump).padding(.top, 8) }
+                    content(rows: slice.rows, hiddenOlder: slice.hiddenOlder, matches: matches)
+                },
+                deck: SeatedDeck(
+                    core: core,
+                    findQuery: $findQuery,
+                    findIndex: $findIndex,
+                    matchCount: matches.count,
+                    minLevel: $minLevel,
+                    autoscroll: $autoscroll,
+                    onClear: clearBuffer
+                )
+            )
             // The custom header replaces the bar visually, but the title still feeds the pushed
             // screen's "‹ Logs" back item — continuing the task pushes, per the design.
-            .navigationTitle("Logs")
-            .toolbar(.hidden, for: .navigationBar)
+            // With the bar shown only to host rail items, a title would repeat the header's large
+            // one; the cost is a plain "Back" on pushed screens while on the rail.
+            .navigationTitle(railActions ? "" : "Logs")
+            .navigationBarTitleDisplayMode(railActions ? .inline : .automatic)
+            .toolbar { if railActions { railToolbar(rows: all) } }
+            .toolbar(railActions ? .automatic : .hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showSettings) {
                 SettingsScreen(core: core)
             }
             .safeAreaInset(edge: .bottom) {
-                if findActive { findBar(matches: matches) }
+                // Seated, find lives on the deck and stays open.
+                if findActive, !duo.seated {
+                    findBar(matches: matches)
+                } else if let event = freshEvent {
+                    eventCard(event)
+                }
             }
         }
         .onAppear { selectTab(activeTabId) }
+        // The other half swapped tabs with this one: take on the new tab's filter and density.
+        .onChange(of: activeTabId) { _ in loadActiveTab() }
+        .onChange(of: duo.seated) { seated in
+            // The deck is a find bar that stays open; leaving the desk keeps the query.
+            if seated { findActive = true }
+        }
+        .onChange(of: store.sync) { request in
+            guard let request, request.target == role else { return }
+            store.sync = nil
+            show(moment: request.timeMs, from: request.fromTab)
+        }
+        .onChange(of: autoscroll) { on in
+            if on { jump = nil }
+        }
+        .onDisappear {
+            // A fold rebuilds the panes; this is what the rebuilt one starts from.
+            store.memory[role] = LogTabsStore.PaneMemory(
+                findActive: findActive,
+                findQuery: findQuery,
+                autoscroll: autoscroll,
+                wrap: wrap,
+                topLineId: visibleRows.ids.min()
+            )
+        }
+        .onChange(of: state.revealTimeMs) { timeMs in
+            // A crash report's "Show in Logs": everything around that moment, on All.
+            guard let timeMs, role == .primary else { return }
+            state.revealTimeMs = nil
+            selectTab(0)
+            show(moment: timeMs, from: "Crash report")
+        }
         .onChange(of: state.revealEntryId) { id in
             // A Signals-tab jump: land on All (it shows everything), stop following the tail,
-            // and open the line's sheet/inspector.
-            guard let id else { return }
+            // and open the line's sheet/inspector. One pane answers it — the primary one.
+            guard let id, role == .primary else { return }
             state.revealEntryId = nil
             selectTab(0)
             autoscroll = false
             revealTarget = id
             if let entry = feed.snapshot.first(where: { $0.id == id }) {
+                jump = Jump(timeMs: entry.timeMs, fromTab: "Signals", anchorId: id)
                 selectedEntry = entry
             }
         }
@@ -197,36 +282,160 @@ internal struct LogsScreen: View {
             case .new:
                 TabFormSheet(title: "New Tab", confirm: "Add", initial: nil, defaultName: nextDefaultTabName()) { draft in
                     let next = SavedFilter(
-                        id: (tabs.map(\.id).max() ?? 0) + 1,
+                        id: (store.tabs.map(\.id).max() ?? 0) + 1,
                         name: draft.name,
                         filter: LogFilter(minLevel: draft.minLevel, query: draft.query),
                         viewMode: draft.viewMode
                     )
-                    tabs.append(next)
-                    Prefs.setSavedFilters(tabs)
+                    store.tabs.append(next)
+                    store.save()
                     selectTab(next.id)
                 }
             case .edit(let tabId):
                 TabFormSheet(
                     title: "Tab Settings",
                     confirm: "Done",
-                    initial: tabs.first { $0.id == tabId }
+                    initial: store.tabs.first { $0.id == tabId }
                 ) { draft in
-                    guard let index = tabs.firstIndex(where: { $0.id == tabId }) else { return }
-                    tabs[index].name = draft.name
-                    tabs[index].filter = LogFilter(minLevel: draft.minLevel, query: draft.query)
-                    tabs[index].viewMode = draft.viewMode
-                    Prefs.setSavedFilters(tabs)
+                    guard let index = store.tabs.firstIndex(where: { $0.id == tabId }) else { return }
+                    store.tabs[index].name = draft.name
+                    store.tabs[index].filter = LogFilter(minLevel: draft.minLevel, query: draft.query)
+                    store.tabs[index].viewMode = draft.viewMode
+                    store.save()
                     if tabId == activeTabId { selectTab(tabId) }
                 }
             }
         }
     }
 
+    /// Halves share the host's navigation stack: one stack reserves the side rail's column once,
+    /// at the display's edge — two would put the left half's in the middle of the display.
+    @ViewBuilder
+    private func stack(@ViewBuilder _ content: () -> some View) -> some View {
+        if isSplit {
+            content()
+        } else {
+            NavigationStack { content() }
+        }
+    }
+
+    /// Seated (half-open on a desk, fold running across): the stream on the upper half, the
+    /// controls on the flat lower half. Everywhere else, just the stream.
+    @ViewBuilder
+    private func arranged(stream: some View, deck: SeatedDeck) -> some View {
+        if duo.seated, role == .primary {
+            FoldSplit {
+                stream
+            } second: {
+                deck
+            }
+        } else {
+            stream
+        }
+    }
+
+    /// Scrolls this half to the line nearest `timeMs` — another half's tap, or a crash report's
+    /// "Show in Logs" — and holds it there until Back to live.
+    private func show(moment timeMs: Int64, from source: String) {
+        let rows = displayed
+        guard let index = rows.nearestIndex(toTimeMs: timeMs) else { return }
+        autoscroll = false
+        jump = Jump(timeMs: timeMs, fromTab: source, anchorId: rows[index].id)
+        revealTarget = rows[index].id
+    }
+
+    /// Beside the host: the newest analytics event captured since docking — tap in the app, see
+    /// that it fired, without opening the Events tab.
+    private var freshEvent: StoredEvent? {
+        guard state.besideHost, role == .primary, let event = state.events.first,
+              event.record.timestamp >= state.besideSinceMs, event.id != dismissedEventId
+        else { return nil }
+        return event
+    }
+
+    private func eventCard(_ event: StoredEvent) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(event.record.name)
+                    .font(.system(size: 14, weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                Text(event.record.params.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ", "))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+            }
+            Spacer(minLength: 6)
+            Button("Open") { state.requestedTab = .events }
+                .font(.system(size: 13, weight: .semibold))
+            Button {
+                dismissedEventId = event.id
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Dismiss event")
+        }
+        .padding(12)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .overlay(RoundedRectangle(cornerRadius: 16).strokeBorder(.white.opacity(0.16), lineWidth: 0.5))
+        .padding(.horizontal, 12)
+        .padding(.bottom, 4)
+    }
+
+    private func jumpBanner(_ jump: Jump) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "clock.arrow.circlepath").foregroundStyle(Color.accentColor)
+            Text("At \(Format.time(jump.timeMs)), from \(jump.fromTab)")
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Button {
+                autoscroll = true
+            } label: {
+                Text("Back to live")
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(Color.accentColor, in: Capsule())
+            }
+        }
+        .padding(12)
+        .background(Color.accentColor.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+    }
+
+    /// A tap in one half shows the same moment in the other; elsewhere it opens the line.
+    private func tapped(_ entry: LogEntry) {
+        if isSplit {
+            store.sync = LogTabsStore.SyncRequest(target: role.other, timeMs: entry.timeMs, fromTab: activeTabName)
+        } else {
+            selectedEntry = entry
+        }
+    }
+
+    private func loadActiveTab() {
+        guard let tab = store.tab(for: role) else { return }
+        query = tab.filter.query
+        appliedQuery = tab.filter.query
+        minLevel = tab.filter.minLevel
+        viewMode = tab.viewMode
+    }
+
+    /// A real wipe, per the design: signal hits die with the buffer they point into, and frozen
+    /// tabs thaw — their snapshots would lie.
+    private func clearBuffer() {
+        core.clearBuffer()
+        store.pausedTabs = []
+        store.frozen = [:]
+        jump = nil
+    }
+
     // MARK: tabs
 
     private func selectTab(_ id: Int64) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
+        guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
         let switching = id != activeTabId
         if switching {
             // Remember where the outgoing tab was; the topmost visible row is its position.
@@ -235,7 +444,7 @@ internal struct LogsScreen: View {
             }
             visibleRows.ids.removeAll()
         }
-        activeTabId = id
+        store.select(id, for: role, split: isSplit)
         query = tab.filter.query
         appliedQuery = tab.filter.query
         minLevel = tab.filter.minLevel
@@ -247,38 +456,38 @@ internal struct LogsScreen: View {
 
     /// The active tab owns the filter state — edits write through and persist, like Android.
     private func writeBackActiveTab() {
-        guard let index = tabs.firstIndex(where: { $0.id == activeTabId }) else { return }
-        tabs[index].filter = LogFilter(minLevel: minLevel, query: appliedQuery)
-        tabs[index].viewMode = viewMode
-        Prefs.setSavedFilters(tabs)
+        guard let index = store.tabs.firstIndex(where: { $0.id == activeTabId }) else { return }
+        store.tabs[index].filter = LogFilter(minLevel: minLevel, query: appliedQuery)
+        store.tabs[index].viewMode = viewMode
+        store.save()
     }
 
     private func closeTab(_ id: Int64) {
         guard id != 0 else { return }
-        tabs.removeAll { $0.id == id }
-        pausedTabs.remove(id)
-        frozen[id] = nil
-        Prefs.setSavedFilters(tabs)
+        store.tabs.removeAll { $0.id == id }
+        store.pausedTabs.remove(id)
+        store.frozen[id] = nil
+        store.save()
         if activeTabId == id { selectTab(0) }
     }
 
     /// Freezes what that tab shows right now; capture keeps running for every tab.
     private func pauseTab(_ id: Int64) {
-        guard let tab = tabs.first(where: { $0.id == id }) else { return }
-        frozen[id] = id == activeTabId
+        guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
+        store.frozen[id] = id == activeTabId
             ? liveFiltered
             : filteredRows(minLevel: tab.filter.minLevel, query: tab.filter.query)
-        pausedTabs.insert(id)
+        store.pausedTabs.insert(id)
     }
 
     private func resumeTab(_ id: Int64) {
-        pausedTabs.remove(id)
-        frozen[id] = nil
+        store.pausedTabs.remove(id)
+        store.frozen[id] = nil
     }
 
     /// "Log 1", "Log 2", … — the first number not already taken, so the name is never mandatory.
     private func nextDefaultTabName() -> String {
-        let names = Set(tabs.map(\.name))
+        let names = Set(store.tabs.map(\.name))
         var n = 1
         while names.contains("Log \(n)") { n += 1 }
         return "Log \(n)"
@@ -294,18 +503,18 @@ internal struct LogsScreen: View {
         )
         var name = "\(base) copy"
         var n = 2
-        while tabs.contains(where: { $0.name == name }) {
+        while store.tabs.contains(where: { $0.name == name }) {
             name = "\(base) copy \(n)"
             n += 1
         }
         let next = SavedFilter(
-            id: (tabs.map(\.id).max() ?? 0) + 1,
+            id: (store.tabs.map(\.id).max() ?? 0) + 1,
             name: name,
             filter: tab.filter,
             viewMode: tab.viewMode
         )
-        tabs.append(next)
-        Prefs.setSavedFilters(tabs)
+        store.tabs.append(next)
+        store.save()
         selectTab(next.id)
     }
 
@@ -314,9 +523,9 @@ internal struct LogsScreen: View {
     private var tabsRow: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 7) {
-                ForEach(tabs, id: \.id) { tab in
+                ForEach(store.tabs, id: \.id) { tab in
                     let isActive = tab.id == activeTabId
-                    let isPaused = pausedTabs.contains(tab.id)
+                    let isPaused = store.pausedTabs.contains(tab.id)
                     Button {
                         selectTab(tab.id)
                     } label: {
@@ -404,7 +613,7 @@ internal struct LogsScreen: View {
 
     /// The per-tab freeze banner: what is waiting, and the way back.
     private var frozenTabBanner: some View {
-        let buffered = max(0, liveFiltered.count - (frozen[activeTabId]?.count ?? 0))
+        let buffered = max(0, liveFiltered.count - (store.frozen[activeTabId]?.count ?? 0))
         return HStack(spacing: 10) {
             Image(systemName: "pause.fill").foregroundStyle(Color(hex: 0xFF9F0A))
             VStack(alignment: .leading, spacing: 2) {
@@ -413,8 +622,8 @@ internal struct LogsScreen: View {
                     .foregroundStyle(Color(hex: 0xFF9F0A))
                 // Android shows the buffered count only once there is one.
                 Text(buffered > 0
-                    ? "+\(buffered.formatted()) buffered · other tabs keep recording"
-                    : "Other tabs keep recording")
+                    ? "+\(buffered.formatted()) buffered · other store.tabs keep recording"
+                    : "Other store.tabs keep recording")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -439,6 +648,121 @@ internal struct LogsScreen: View {
 
     // MARK: header
 
+    /// iPhone Duo, open: one pane or two, and LogSense beside the host instead of over it.
+    @ViewBuilder
+    private var duoSection: some View {
+        if splitEnabled != nil || duo.isOpen || state.besideHost {
+            Divider()
+            if let splitEnabled {
+                Toggle(isOn: splitEnabled) {
+                    Label("Split Across Fold", systemImage: "rectangle.split.2x1")
+                }
+            }
+            if state.besideHost {
+                Button {
+                    LogSenseWindow.expand()
+                } label: {
+                    Label("Expand to Full Screen", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+            } else if duo.isOpen {
+                Button {
+                    LogSenseWindow.dockBeside(division: duo.divisionInWindow)
+                } label: {
+                    Label("Open Beside \(core.hostName)", systemImage: "rectangle.righthalf.inset.filled")
+                }
+            }
+        }
+    }
+
+    /// Closed iPhone Duo: tabs and toolbars live on the right-hand rail, so the header's actions
+    /// move there too and the stream starts right under the title. Halves keep their own buttons.
+    private var railActions: Bool { duo.verticalRail && !isSplit }
+
+    /// Like Android's app bar pause: global — every tab stops. Per-tab freezing lives in the
+    /// overflow menu and the tab's long-press. Global, so on an open Duo it sits once, on the left.
+    @ViewBuilder
+    private var pauseButton: some View {
+        if role == .secondary {
+            EmptyView()
+        } else if state.status == .paused {
+            Button {
+                core.resume()
+            } label: {
+                Image(systemName: "play.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(Color(hex: 0xFF9F0A))
+                    .frame(width: 34, height: 34)
+                    .background(Color(hex: 0xFF9F0A).opacity(0.22), in: Circle())
+            }
+            .accessibilityLabel("Resume capture")
+        } else {
+            headerButton("pause.fill", label: "Pause capture") { core.pause() }
+        }
+    }
+
+    private func toggleFind() {
+        findActive.toggle()
+        if !findActive { findQuery = SearchQuery() }
+    }
+
+    @ViewBuilder
+    private func overflowItems(rows: [LogEntry]) -> some View {
+        Section(activeTabName) {
+            Picker("Density", selection: $viewMode) {
+                Text("Standard").tag(ViewMode.standard)
+                Text("Compact").tag(ViewMode.compact)
+                Text("Raw").tag(ViewMode.raw)
+            }
+            Toggle("Wrap Long Lines", isOn: $wrap)
+            Toggle("Autoscroll", isOn: $autoscroll)
+            if isActiveTabPaused {
+                Button {
+                    resumeTab(activeTabId)
+                } label: {
+                    Label("Resume This Tab", systemImage: "play.fill")
+                }
+            } else {
+                Button {
+                    pauseTab(activeTabId)
+                } label: {
+                    Label("Pause This Tab", systemImage: "pause.fill")
+                }
+            }
+        }
+        if role == .primary { duoSection }
+        Divider()
+        ShareLink(item: shareText(rows)) { Label("Export…", systemImage: "square.and.arrow.up") }
+        Button(role: .destructive) {
+            clearBuffer()
+        } label: {
+            Label("Clear Buffer", systemImage: "trash")
+        }
+        Divider()
+        Button {
+            showSettings = true
+        } label: {
+            Label("Settings…", systemImage: "gearshape")
+        }
+    }
+
+    /// The same actions as rail items (icon-only, so each carries its label for VoiceOver).
+    @ToolbarContentBuilder
+    private func railToolbar(rows: [LogEntry]) -> some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            if state.status == .paused {
+                Button { core.resume() } label: { Label("Resume capture", systemImage: "play.fill") }
+            } else {
+                Button { core.pause() } label: { Label("Pause capture", systemImage: "pause.fill") }
+            }
+            Button { toggleFind() } label: { Label("Find", systemImage: "magnifyingglass") }
+            Menu {
+                overflowItems(rows: rows)
+            } label: {
+                Label("More", systemImage: "ellipsis")
+            }
+        }
+    }
+
     private func header(rows: [LogEntry]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             // One nav row: the labelled back item to the host and the trailing actions share it;
@@ -449,79 +773,28 @@ internal struct LogsScreen: View {
                     BackButton(label: core.hostName, action: onDone)
                 }
                 Spacer()
-                HStack(spacing: 8) {
-                    // Like Android's app bar pause: global — every tab stops. Per-tab freezing
-                    // lives in the overflow menu and the tab's long-press.
-                    if state.status == .paused {
-                        Button {
-                            core.resume()
+                // On the Duo's side rail the system hosts these as toolbar items instead.
+                if !railActions {
+                    HStack(spacing: 8) {
+                        pauseButton
+                        headerButton("magnifyingglass", label: "Find") { toggleFind() }
+                        // The menu titles itself with the tab's name — density and line behavior
+                        // apply to this tab alone. Every root's overflow ends with LogSense Settings.
+                        Menu {
+                            overflowItems(rows: rows)
                         } label: {
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(Color(hex: 0xFF9F0A))
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 15, weight: .semibold))
                                 .frame(width: 34, height: 34)
-                                .background(Color(hex: 0xFF9F0A).opacity(0.22), in: Circle())
+                                .background(Color(.tertiarySystemFill), in: Circle())
                         }
-                    } else {
-                        headerButton("pause.fill") { core.pause() }
-                    }
-                    headerButton("magnifyingglass") {
-                        findActive.toggle()
-                        if !findActive { findQuery = SearchQuery() }
-                    }
-                    // The menu titles itself with the tab's name — density and line behavior
-                    // apply to this tab alone. Every root's overflow ends with LogSense Settings.
-                    Menu {
-                        Section(activeTabName) {
-                            Picker("Density", selection: $viewMode) {
-                                Text("Standard").tag(ViewMode.standard)
-                                Text("Compact").tag(ViewMode.compact)
-                                Text("Raw").tag(ViewMode.raw)
-                            }
-                            Toggle("Wrap Long Lines", isOn: $wrap)
-                            Toggle("Autoscroll", isOn: $autoscroll)
-                            if isActiveTabPaused {
-                                Button {
-                                    resumeTab(activeTabId)
-                                } label: {
-                                    Label("Resume This Tab", systemImage: "play.fill")
-                                }
-                            } else {
-                                Button {
-                                    pauseTab(activeTabId)
-                                } label: {
-                                    Label("Pause This Tab", systemImage: "pause.fill")
-                                }
-                            }
-                        }
-                        Divider()
-                        ShareLink(item: shareText(rows)) { Label("Export…", systemImage: "square.and.arrow.up") }
-                        // A real wipe, per the design: signal hits die with the buffer they
-                        // point into, and frozen tabs thaw — their snapshots would lie.
-                        Button(role: .destructive) {
-                            core.clearBuffer()
-                            pausedTabs = []
-                            frozen = [:]
-                        } label: {
-                            Label("Clear Buffer", systemImage: "trash")
-                        }
-                        Divider()
-                        Button {
-                            showSettings = true
-                        } label: {
-                            Label("Settings…", systemImage: "gearshape")
-                        }
-                    } label: {
-                        Image(systemName: "ellipsis")
-                            .font(.system(size: 15, weight: .semibold))
-                            .frame(width: 34, height: 34)
-                            .background(Color(.tertiarySystemFill), in: Circle())
+                        .accessibilityLabel("More")
                     }
                 }
             }
             // Root titled by tab: the back item carries the host name, freeing the title slot.
             VStack(alignment: .leading, spacing: 5) {
-                Text("LOGSENSE")
+                Text(role == .secondary ? "OTHER HALF" : "LOGSENSE")
                     .font(.system(size: 11.5, weight: .semibold))
                     .kerning(1)
                     .foregroundStyle(.secondary)
@@ -535,13 +808,14 @@ internal struct LogsScreen: View {
         .padding(.bottom, 6)
     }
 
-    private func headerButton(_ systemImage: String, action: @escaping () -> Void) -> some View {
+    private func headerButton(_ systemImage: String, label: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: systemImage)
                 .font(.system(size: 14, weight: .semibold))
                 .frame(width: 34, height: 34)
                 .background(Color(.tertiarySystemFill), in: Circle())
         }
+        .accessibilityLabel(label)
     }
 
     private func statusRow(rows: [LogEntry]) -> some View {
@@ -554,9 +828,9 @@ internal struct LogsScreen: View {
             case .live:
                 dot(.green, pulsing: true)
                 Text("Live").foregroundStyle(.green).fontWeight(.semibold)
-                if !pausedTabs.isEmpty {
-                    let recording = tabs.count - tabs.filter { pausedTabs.contains($0.id) }.count
-                    Text("· \(recording) of \(tabs.count) tabs recording")
+                if !store.pausedTabs.isEmpty {
+                    let recording = store.tabs.count - store.tabs.filter { store.pausedTabs.contains($0.id) }.count
+                    Text("· \(recording) of \(store.tabs.count) store.tabs recording")
                 } else if isFiltering {
                     Text("· \(rows.count.formatted()) of \(feed.snapshot.count.formatted()) in “\(activeTabName)”")
                 } else {
@@ -579,7 +853,7 @@ internal struct LogsScreen: View {
     private var isFiltering: Bool { !appliedQuery.isEmpty || minLevel != .debug }
 
     private var activeTabName: String {
-        tabs.first { $0.id == activeTabId }?.name ?? "All"
+        store.tabs.first { $0.id == activeTabId }?.name ?? "All"
     }
 
     /// The filter belongs to a tab, so its field sits below the tab row, on the tab's own
@@ -627,7 +901,7 @@ internal struct LogsScreen: View {
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "line.3.horizontal.decrease")
-                    Text(minLevel == .debug ? "All levels" : "\(minLevel.letter)+")
+                    Text(verbatim: minLevel == .debug ? "All levels" : "\(minLevel.letter)+")
                 }
                 .font(.system(size: 13, weight: .medium))
             }
@@ -734,7 +1008,8 @@ internal struct LogsScreen: View {
                                 .onAppear { visibleRows.ids.insert(entry.id) }
                                 .onDisappear { visibleRows.ids.remove(entry.id) }
                                 .contentShape(Rectangle())
-                                .onTapGesture { selectedEntry = entry }
+                                .onTapGesture { tapped(entry) }
+                                .modifier(InspectLineMenu(enabled: isSplit) { selectedEntry = entry })
                                 .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
                                 .listRowSeparator(viewMode == .standard ? .visible : .hidden)
                                 .listRowBackground(rowBackground(entry, matches: matches, hit: hits[entry.id]))
@@ -755,6 +1030,13 @@ internal struct LogsScreen: View {
                         // First layout pass hasn't happened yet; scroll on the next runloop turn.
                         if autoscroll {
                             DispatchQueue.main.async { proxy.scrollTo(Self.bottomSentinel, anchor: .bottom) }
+                        } else if let anchor = restoreAnchor {
+                            // Rebuilt by a fold: back to the line this pane was on. onChange never
+                            // sees an initial value, so the first restore happens here.
+                            DispatchQueue.main.async {
+                                proxy.scrollTo(anchor, anchor: .top)
+                                restoreAnchor = nil
+                            }
                         }
                     }
                     // The last id, not the count: at the buffer cap the count stops changing while
@@ -809,8 +1091,16 @@ internal struct LogsScreen: View {
                         .padding(.bottom, 14)
                     }
                     .simultaneousGesture(DragGesture().onChanged { _ in autoscroll = false })
+                    // A size change re-wraps every row, so a kept pixel offset lands on another
+                    // line. Hold on to the top line instead and scroll back to it.
+                    .background(GeometryReader { geometry in
+                        Color.clear.onChange(of: geometry.size.width) { _ in
+                            guard !autoscroll, let top = visibleRows.ids.min() else { return }
+                            DispatchQueue.main.async { restoreAnchor = top }
+                        }
+                    })
                 }
-                if isRegular, let selected = selectedEntry,
+                if sideInspector, let selected = selectedEntry,
                    let index = rows.firstIndex(where: { $0.id == selected.id }) {
                     Divider()
                     LineInspector(
@@ -828,7 +1118,10 @@ internal struct LogsScreen: View {
     /// Android's tested precedence: selection/find first, then signal tint (which wins over
     /// fault/error), then fault, then error.
     private func rowBackground(_ entry: LogEntry, matches: [Int64], hit: SignalHit?) -> Color {
-        if isRegular, selectedEntry?.id == entry.id {
+        if sideInspector, selectedEntry?.id == entry.id {
+            return Color.accentColor.opacity(0.12)
+        }
+        if jump?.anchorId == entry.id {
             return Color.accentColor.opacity(0.12)
         }
         if findActive, matches.indices.contains(findIndex), matches[findIndex] == entry.id {
@@ -860,9 +1153,11 @@ internal struct LogsScreen: View {
 
     @ViewBuilder
     private func row(_ entry: LogEntry, hit: SignalHit?) -> some View {
+        // Seated, the upper half is read at a glance: one line per entry, as many as fit.
+        let wrap = duo.seated ? false : self.wrap
         let base = Group {
-            switch viewMode {
-            case .standard where isRegular:
+            switch duo.seated ? .compact : viewMode {
+            case .standard where isRegular && !isSplit && !duo.seated:
                 // Regular width: the design's iPad stream row — time, chip, 92pt tag column, message.
                 PadRow(entry: entry, wrap: wrap, highlight: findActive ? matcher : nil)
             case .standard:
@@ -877,9 +1172,23 @@ internal struct LogsScreen: View {
             base.overlay(alignment: .leading) {
                 Rectangle().fill(hit.signal.category.color).frame(width: 3)
             }
+        } else if state.besideHost, let freshness = freshness(of: entry) {
+            // Beside the host: what a tap on the other side just caused carries an accent edge
+            // that fades over two seconds (it re-renders with each ~1 Hz publish).
+            base.overlay(alignment: .leading) {
+                Rectangle().fill(Color.accentColor.opacity(freshness)).frame(width: 3)
+            }
         } else {
             base
         }
+    }
+
+    /// 1 for a line that just arrived, falling to 0 at two seconds; nil once it is old news.
+    private func freshness(of entry: LogEntry) -> Double? {
+        guard entry.timeMs >= state.besideSinceMs else { return nil }
+        let age = Date().timeIntervalSince1970 * 1000 - Double(entry.timeMs)
+        guard age < 2_000 else { return nil }
+        return max(0.25, 1 - age / 2_000)
     }
 
     // MARK: find bar
@@ -954,6 +1263,24 @@ internal struct LogsScreen: View {
             "\(Format.time(entry.timeMs)) \(entry.pid)-\(entry.tid) \(entry.level.letter) \(entry.tag): \(entry.message)\n"
         }
         .joined()
+    }
+}
+
+/// "Inspect Line" on long-press — only where a tap does something else (the halves of an open Duo).
+private struct InspectLineMenu: ViewModifier {
+    let enabled: Bool
+    let inspect: () -> Void
+
+    func body(content: Content) -> some View {
+        if enabled {
+            content.contextMenu {
+                Button(action: inspect) {
+                    Label("Inspect Line", systemImage: "text.magnifyingglass")
+                }
+            }
+        } else {
+            content
+        }
     }
 }
 

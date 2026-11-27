@@ -12,7 +12,7 @@ internal enum CaptureStatus {
 
 /// The high-churn log feed, split from `LogSenseState` on purpose: `snapshot` republishes at
 /// the poll cadence, and ObservableObject invalidation is object-granular — every screen
-/// observing the shared state would re-evaluate per publish. Only LogsScreen observes this.
+/// observing the shared state would re-evaluate per publish. Only the Logs panes observe this.
 @MainActor
 internal final class LogsFeed: ObservableObject {
     @Published var snapshot: [LogEntry] = []
@@ -41,8 +41,14 @@ internal final class LogSenseState: ObservableObject {
     /// stream away from the store (an Xcode-launched run does this even with the debugger
     /// off, and such a launch is indistinguishable from a normal one from inside the process).
     @Published var storeSilent = false
-    /// A log line the Signals tab asked to reveal; consumed by LogsScreen (jump + line sheet).
+    /// A log line the Signals tab asked to reveal; consumed by the primary Logs pane (jump + line sheet).
     @Published var revealEntryId: Int64?
+    /// iPhone Duo: LogSense is docked on the far side of the fold with the host app live beside it.
+    @Published var besideHost = false
+    /// When the current "beside" stint began — lines and events newer than this are fresh.
+    @Published var besideSinceMs: Int64 = 0
+    /// A moment (ms) a crash report asked the Logs tab to show; consumed by the primary pane.
+    @Published var revealTimeMs: Int64?
 }
 
 internal enum RootTab {
@@ -542,7 +548,7 @@ internal final class LogSenseCore {
     private func publishIfNeeded() {
         let total = buffer.totalReceived
         if paused {
-            Task { @MainActor [state] in
+            Task { @MainActor [feed] in
                 feed.bufferedWhilePaused = max(0, total - feed.totalReceived)
             }
             return
@@ -609,8 +615,10 @@ internal final class LogSenseCore {
         // re-asserting at didEnterBackground makes ours the last write that wins.
         NotificationCenter.default.addObserver(
             forName: UIApplication.didEnterBackgroundNotification, object: nil, queue: .main
-        ) { [weak self] _ in
-            self?.assertShortcutPresence()
+        ) { _ in
+            // Delivered on the main queue, which is what the main-actor method needs. Reached
+            // through the singleton rather than a captured self, which isn't Sendable.
+            MainActor.assumeIsolated { LogSenseCore.shared?.assertShortcutPresence() }
         }
         // Notification taps go to the center's delegate. Most apps own that delegate — they forward
         // to LogSense.handleNotificationResponse. When nobody claims the slot by the time the app
