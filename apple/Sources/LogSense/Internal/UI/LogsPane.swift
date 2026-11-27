@@ -178,9 +178,15 @@ internal struct LogsPane: View {
         stack {
             arranged(
                 stream: VStack(spacing: 0) {
-                    header(rows: all)
+                    // Seated, the upper half is for reading: one header row, and the deck below
+                    // carries find, level and pause — so the filter field steps aside too.
+                    if duo.seated, role == .primary {
+                        seatedHeader(rows: all)
+                    } else {
+                        header(rows: all)
+                    }
                     tabsRow
-                    filterBand
+                    if !(duo.seated && role == .primary) { filterBand }
                     if DebuggerState.logsDiverted || state.storeSilent { debuggerBanner.padding(.top, 8) }
                     if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                     if state.status == .paused { pausedBanner.padding(.top, 8) }
@@ -761,6 +767,29 @@ internal struct LogsPane: View {
                 Label("More", systemImage: "ellipsis")
             }
         }
+    }
+
+    /// Seated: back, title, live status and the overflow menu in a single row.
+    private func seatedHeader(rows: [LogEntry]) -> some View {
+        HStack(spacing: 10) {
+            if let onDone {
+                BackButton(label: core.hostName, action: onDone)
+            }
+            Text("Logs").font(.system(size: 17, weight: .semibold))
+            statusRow(rows: rows)
+            Spacer(minLength: 8)
+            Menu {
+                overflowItems(rows: rows)
+            } label: {
+                Image(systemName: "ellipsis")
+                    .font(.system(size: 15, weight: .semibold))
+                    .frame(width: 34, height: 34)
+                    .background(Color(.tertiarySystemFill), in: Circle())
+            }
+            .accessibilityLabel("More")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
     }
 
     private func header(rows: [LogEntry]) -> some View {
