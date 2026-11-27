@@ -1,9 +1,9 @@
 #if os(iOS)
 import SwiftUI
 
-/// The Logs tab's layout host. One pane everywhere — except on an open iPhone Duo, where the
-/// extra width becomes a second pane rather than longer lines: two tabs, one on each side of the
-/// fold (the split itself is the system's, so the seam lands on the crease).
+/// The Logs tab's layout host. One pane everywhere. On an open iPhone Duo that pane goes full
+/// width as a table; a second pane — two tabs, one on each side of the fold — is one tap away on
+/// the rail, kept for the session but never the default.
 internal struct LogsScreen: View {
     let core: LogSenseCore
     let onDone: (() -> Void)?
@@ -11,7 +11,6 @@ internal struct LogsScreen: View {
     @StateObject private var store = LogTabsStore()
     @ObservedObject private var state: LogSenseState
     @Environment(\.duoPosture) private var duo
-    @AppStorage(Prefs.duoSplitKey) private var splitEnabled = true
 
     init(core: LogSenseCore, onDone: (() -> Void)?) {
         self.core = core
@@ -20,7 +19,12 @@ internal struct LogsScreen: View {
     }
 
     /// Docked beside the host, LogSense has half the display — one pane is all that fits.
-    private var showsSplit: Bool { duo.isOpen && splitEnabled && !state.besideHost }
+    private var showsSplit: Bool { duo.isOpen && store.splitRequested && !state.besideHost }
+
+    /// The split switch, offered while a split is possible (open, not docked beside the host).
+    private var splitSwitch: Binding<Bool>? {
+        duo.isOpen && !state.besideHost ? $store.splitRequested : nil
+    }
 
     var body: some View {
         Group {
@@ -28,7 +32,7 @@ internal struct LogsScreen: View {
                 NavigationStack {
                     FoldSplit {
                         LogsPane(core: core, onDone: onDone, store: store, role: .primary,
-                                 isSplit: true, splitEnabled: $splitEnabled)
+                                 isSplit: true, splitEnabled: splitSwitch)
                     } second: {
                         LogsPane(core: core, onDone: nil, store: store, role: .secondary, isSplit: true)
                     }
@@ -36,9 +40,16 @@ internal struct LogsScreen: View {
                 }
                 .onAppear { store.ensureSecondaryTab() }
             } else {
-                LogsPane(core: core, onDone: onDone, store: store,
-                         splitEnabled: duo.isOpen && !state.besideHost ? $splitEnabled : nil)
+                LogsPane(core: core, onDone: onDone, store: store, splitEnabled: splitSwitch)
             }
+        }
+        // However the split was asked for (rail button or More menu), its one-time tip is done.
+        .onChange(of: store.splitRequested) { on in
+            if on { UserDefaults.standard.set(true, forKey: Prefs.duoSplitHintShownKey) }
+        }
+        .onAppear {
+            // Scripted runs: LOGSENSE_START_SPLIT=1 opens split (session-only, like the button).
+            if ProcessInfo.processInfo.environment["LOGSENSE_START_SPLIT"] == "1" { store.splitRequested = true }
         }
     }
 }

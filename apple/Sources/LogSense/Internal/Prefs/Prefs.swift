@@ -12,8 +12,8 @@ internal enum Prefs {
     private static let lastSeenCrashKey = "com.msabhi.logsense.lastSeenCrashMs"
     static let keepPastEventsKey = "com.msabhi.logsense.keepPastEvents"
     static let keepPastCrashesKey = "com.msabhi.logsense.keepPastCrashes"
-    /// iPhone Duo, open: two Logs tabs side by side (on) or one wide pane (off).
-    static let duoSplitKey = "com.msabhi.logsense.duoSplit"
+    /// iPhone Duo: the one-time hint explaining the split button has been seen.
+    static let duoSplitHintShownKey = "com.msabhi.logsense.duoSplitHintShown"
 
     /// Muted signal ids; the built-in default set until the user touches it.
     static func mutedSignals() -> Set<String> {

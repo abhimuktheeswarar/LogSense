@@ -56,6 +56,16 @@ public enum LogSense {
         LogSenseWindow.present()
     }
 
+    /// Like `present()`, and with `beside: true` on an open iPhone Duo (iOS 27.1+) LogSense docks
+    /// on the far side of the fold while your app stays live and touchable on the near side —
+    /// tap there, read the lines it caused here. Anywhere else it opens full screen as usual.
+    /// Wire it to a debug menu or gesture as a one-step "logs beside the app".
+    @MainActor
+    public static func present(beside: Bool) {
+        LogSenseWindow.present()
+        if beside { LogSenseCore.shared?.state.dockBesideRequested = true }
+    }
+
     /// Handles the "Open LogSense" Home Screen quick action (registered automatically by `start`).
     /// iOS delivers quick-action taps to *your* scene delegate, so forward them:
     ///

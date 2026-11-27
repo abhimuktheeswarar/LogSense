@@ -39,6 +39,9 @@ internal final class LogTabsStore: ObservableObject {
     @Published var pausedTabs: Set<Int64> = []
     @Published var frozen: [Int64: [LogEntry]] = [:]
     @Published var sync: SyncRequest?
+    /// iPhone Duo, open: two tabs side by side. Asked for, never the default — and kept only for
+    /// as long as this screen lives (the session), never persisted.
+    @Published var splitRequested = false
     var memory: [LogsPaneRole: PaneMemory] = [:]
 
     init() {

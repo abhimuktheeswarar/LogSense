@@ -17,7 +17,6 @@ internal struct RootView: View {
     }
 
     @State private var selection: RootTab = .logs
-    @State private var dockBesideIfOpen = false
 
     var body: some View {
         TabView(selection: $selection) {
@@ -37,7 +36,7 @@ internal struct RootView: View {
                 .badge(state.signalHits.count)
                 .tag(RootTab.signals)
         }
-        .modifier(ScriptedDock(requested: $dockBesideIfOpen))
+        .modifier(DockBesideRequest(state: state))
         // iPhone Duo: fold, hinge and side rail, read once here for every screen below.
         .readsDuoPosture()
         .tint(core.config.accentColor ?? .accentColor)
@@ -74,8 +73,7 @@ internal struct RootView: View {
         default: break
         }
         if env["LOGSENSE_START_BESIDE"] == "1" {
-            // After the first layout pass, once the fold region is known.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1) { dockBesideIfOpen = true }
+            state.dockBesideRequested = true
         }
     }
 
@@ -90,15 +88,39 @@ internal struct RootView: View {
     }
 }
 
-/// Docks beside the host once the posture shows an open Duo (scripted runs only).
-private struct ScriptedDock: ViewModifier {
-    @Binding var requested: Bool
+/// Carries out `LogSense.present(beside: true)`: docks once the layout reports an open iPhone Duo.
+/// The fold region arrives with the first layout pass, so a request gets one short grace period;
+/// if the Duo still isn't open then (closed, or not a Duo), LogSense simply stays full screen and
+/// the request is dropped — it must never fire later, on some unrelated unfold.
+private struct DockBesideRequest: ViewModifier {
+    @ObservedObject var state: LogSenseState
     @Environment(\.duoPosture) private var duo
+    /// When the pending request was first seen without an open Duo; its grace period runs from here.
+    @State private var waitingSince: Date?
+    @State private var tick = 0
 
     func body(content: Content) -> some View {
-        content.onChange(of: requested) { requested in
-            guard requested, duo.isOpen else { return }
+        content
+            .onAppear { settle() }
+            .onChange(of: state.dockBesideRequested) { _ in settle() }
+            .onChange(of: duo.isOpen) { _ in settle() }
+            .onChange(of: tick) { _ in settle() }
+    }
+
+    private func settle() {
+        guard state.dockBesideRequested else { waitingSince = nil; return }
+        if duo.isOpen {
+            state.dockBesideRequested = false
+            waitingSince = nil
             LogSenseWindow.dockBeside(division: duo.divisionInWindow)
+        } else if let since = waitingSince {
+            if Date().timeIntervalSince(since) >= 0.8 {
+                state.dockBesideRequested = false
+                waitingSince = nil
+            }
+        } else {
+            waitingSince = Date()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.85) { tick += 1 }
         }
     }
 }

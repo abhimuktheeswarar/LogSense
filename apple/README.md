@@ -28,11 +28,11 @@ trouble patterns — built so the tool itself never noticeably burdens the host 
 ## Install — Swift Package Manager only
 
 There is no CocoaPods podspec and none is planned. In Xcode: **File ▸ Add Package
-Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.0`. Or in a
+Dependencies…**, paste the repository URL, rule *Up to Next Major* from `0.7.1`. Or in a
 `Package.swift`:
 
 ```swift
-.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.0")
+.package(url: "https://github.com/abhimuktheeswarar/LogSense.git", from: "0.7.1")
 ```
 
 The manifest lives at the repository root and points into `apple/` — add the package from the
@@ -131,18 +131,23 @@ non-folding device never sees them.
 
 - **Closed** — the phone layout, with the tab bar and Logs' Pause / Find / More on the
   right-hand rail. Crashes points out that unfolding puts a report beside its list.
-- **Open** — the extra width becomes a second pane, split exactly on the crease (nothing tappable
-  sits on it):
-  - **Logs: two tabs, one per half**, each with its own filter, level, density, find and freeze.
-    The second half opens on another tab (an "Errors" tab is made once if there is only All);
-    picking the tab the other half shows swaps them. **Tap a line to move the other half to the
-    same moment**, with *Back to live* to return; long-press → *Inspect Line* opens the line.
-    *Split Across Fold* in the overflow menu switches back to one pane.
+- **Open** — Logs goes full width as a table (time · level · tag · message, most lines on one
+  row), with the tab pills before the crease and the filter after it, so no control sits on it.
+  - **Split on demand**: the split button on the rail (explained once by a tip) puts **two tabs
+    side by side**, split exactly on the crease, each with its own filter, level, density, find and
+    freeze. The right half is titled with its tab; the pill with the split glyph is the tab open in
+    the other half (picking it swaps the halves). **Tap a line to move the other half to the same
+    moment**, with *Back to live* to return; long-press → *Inspect Line* opens the line. The
+    filled split button goes back to one stream. The split lasts for the session, never the default.
   - **Crashes: the report beside its list**; *Show in Logs* jumps to the crash's moment.
-- **Beside the host** — overflow menu → *Open Beside <app>* docks LogSense on the far side of the
-  fold while the app stays live and touchable on the near side: tap there, read the lines it caused
-  here (fresh lines carry a fading accent edge; the newest analytics event shows as a card).
-  *Expand to Full Screen* undocks; folding always returns to the full cover.
+- **Beside the host** — LogSense docks on the far side of the fold while the app stays live and
+  touchable on the near side: tap there, read the lines it caused here (fresh lines carry a fading
+  accent edge; the newest analytics event shows as a card). Two ways in:
+  - from LogSense: overflow menu → *Open Beside <app>*;
+  - from your app, in one step: `LogSense.present(beside: true)` — wire it to a debug menu or
+    gesture. On an open Duo it docks; anywhere else it opens full screen as `present()` does.
+
+  *Expand* on the rail undocks; folding always returns to the full cover.
 - **Seated** — half-open with the fold running across: the stream on the upper half, the controls
   on the flat lower half: find always open with thumb-sized steppers, minimum level as one-tap
   segments, Pause / Latest / Clear.
@@ -324,7 +329,8 @@ Live Activity toggle, theme and accent. See the doc comments in `LogSenseConfig.
 private-vs-public interpolation, burst, analytics payload shapes, signal lines, and both crash
 paths. Scripted-run hooks: launch env `LOGSENSE_AUTO_OPEN=1` opens LogSense after launch,
 `LOGSENSE_CRASH_AFTER=1` raises a crash a few seconds in, `LOGSENSE_START_TAB=events|crashes|signals`
-opens on that tab, `LOGSENSE_START_BESIDE=1` docks beside the demo on an open iPhone Duo. Remember the limitation above: launch
+opens on that tab, `LOGSENSE_START_BESIDE=1` docks beside the demo and `LOGSENSE_START_SPLIT=1` splits Logs on an open
+iPhone Duo. Remember the limitation above: launch
 the demo from the simulator's home screen, not from Xcode, to see full capture.
 
 ## Development

@@ -47,6 +47,9 @@ internal final class LogSenseState: ObservableObject {
     @Published var besideHost = false
     /// When the current "beside" stint began — lines and events newer than this are fresh.
     @Published var besideSinceMs: Int64 = 0
+    /// `LogSense.present(beside: true)` asked to dock beside the host; RootView docks once the
+    /// layout shows an open iPhone Duo, or drops the request when there is none.
+    @Published var dockBesideRequested = false
     /// A moment (ms) a crash report asked the Logs tab to show; consumed by the primary pane.
     @Published var revealTimeMs: Int64?
 }

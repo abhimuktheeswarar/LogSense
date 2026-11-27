@@ -58,6 +58,8 @@ internal struct LogsPane: View {
     @State private var jump: Jump?
     /// The beside-the-host event card the developer closed.
     @State private var dismissedEventId: String?
+    /// The split button's one-time explanation, shown the first time the Duo is open.
+    @AppStorage(Prefs.duoSplitHintShownKey) private var splitHintShown = false
 
     private struct Jump: Equatable {
         let timeMs: Int64
@@ -185,8 +187,18 @@ internal struct LogsPane: View {
                     } else {
                         header(rows: all)
                     }
-                    tabsRow
-                    if !(duo.seated && role == .primary) { filterBand }
+                    if wideOpen {
+                        // Open and full width: tabs and filter share one bar, the pills before
+                        // the crease and the filter after it, so no control sits on the fold.
+                        FoldSplit(showsCrease: false) { tabsRow } second: { filterBand }
+                            .frame(height: 52)
+                            .background(bandTint)
+                            .overlay(alignment: .bottom) { hairline }
+                        if !splitHintShown { splitHint.padding(.top, 8) }
+                    } else {
+                        tabsRow
+                        if !(duo.seated && role == .primary) { filterBand }
+                    }
                     if DebuggerState.logsDiverted || state.storeSilent { debuggerBanner.padding(.top, 8) }
                     if isActiveTabPaused { frozenTabBanner.padding(.top, 8) }
                     if state.status == .paused { pausedBanner.padding(.top, 8) }
@@ -539,6 +551,12 @@ internal struct LogsPane: View {
                             if isPaused {
                                 Image(systemName: "pause.fill").font(.system(size: 9, weight: .bold))
                             }
+                            // Open in the other half — tapping it swaps the halves.
+                            if isSplit, store.activeTab[role.other] == tab.id {
+                                Image(systemName: "rectangle.split.2x1")
+                                    .font(.system(size: 10, weight: .semibold))
+                                    .accessibilityLabel("open in the other half")
+                            }
                             // A tab holding a filter carries a small funnel, so narrowed tabs
                             // are visible without opening them.
                             if !tab.filter.query.isEmpty || tab.filter.minLevel != .debug {
@@ -613,8 +631,8 @@ internal struct LogsPane: View {
             .padding(.top, 6)
             .padding(.bottom, 9)
         }
-        .background(scheme == .dark ? Color(hex: 0x1C1C1E).opacity(0.55) : Color(hex: 0xF2F2F7).opacity(0.7))
-        .overlay(alignment: .bottom) { Divider() }
+        .background(wideOpen ? Color.clear : bandTint)
+        .overlay(alignment: .bottom) { if !wideOpen { hairline } }
     }
 
     /// The per-tab freeze banner: what is waiting, and the way back.
@@ -683,6 +701,40 @@ internal struct LogsPane: View {
     /// Closed iPhone Duo: tabs and toolbars live on the right-hand rail, so the header's actions
     /// move there too and the stream starts right under the title. Halves keep their own buttons.
     private var railActions: Bool { duo.verticalRail && !isSplit }
+
+    /// The tab strip's tint, shared by the whole tabs-and-filter bar when it spans the fold.
+    private var bandTint: Color {
+        scheme == .dark ? Color(hex: 0x1C1C1E).opacity(0.55) : Color(hex: 0xF2F2F7).opacity(0.7)
+    }
+
+    /// A bar's bottom edge. Not `Divider()`: inside the fold split's HStack a Divider turns vertical.
+    private var hairline: some View {
+        Rectangle().fill(Color(.separator)).frame(height: 0.5)
+    }
+
+    /// Open iPhone Duo, one stream across both sides of the fold — the default open layout.
+    private var wideOpen: Bool { duo.isOpen && !isSplit && !duo.seated && role == .primary }
+
+    /// Once, the first time the Duo is open: what the outlined split button on the rail does.
+    private var splitHint: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "rectangle.split.2x1").foregroundStyle(Color.accentColor)
+            Text("Compare two tabs: the split button on the rail puts a second one on the other side of the fold.")
+                .font(.system(size: 13))
+            Spacer(minLength: 8)
+            Button {
+                splitHintShown = true
+            } label: {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
+            }
+            .foregroundStyle(.secondary)
+            .accessibilityLabel("Dismiss tip")
+        }
+        .padding(12)
+        .background(Color.accentColor.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 16)
+        .padding(.bottom, 6)
+    }
 
     /// Like Android's app bar pause: global — every tab stops. Per-tab freezing lives in the
     /// overflow menu and the tab's long-press. Global, so on an open Duo it sits once, on the left.
@@ -755,6 +807,22 @@ internal struct LogsPane: View {
     @ToolbarContentBuilder
     private func railToolbar(rows: [LogEntry]) -> some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
+            // Open iPhone Duo: the two Duo-only moves, one tap each.
+            if let splitEnabled, duo.isOpen {
+                Button {
+                    splitEnabled.wrappedValue = true
+                    splitHintShown = true
+                } label: {
+                    Label("Split Across Fold", systemImage: "rectangle.split.2x1")
+                }
+            }
+            if state.besideHost {
+                Button {
+                    LogSenseWindow.expand()
+                } label: {
+                    Label("Expand to Full Screen", systemImage: "arrow.up.left.and.arrow.down.right")
+                }
+            }
             if state.status == .paused {
                 Button { core.resume() } label: { Label("Resume capture", systemImage: "play.fill") }
             } else {
@@ -805,6 +873,19 @@ internal struct LogsPane: View {
                 // On the Duo's side rail the system hosts these as toolbar items instead.
                 if !railActions {
                     HStack(spacing: 8) {
+                        if isSplit, role == .primary, let splitEnabled {
+                            // Split was asked for; the same glyph, filled, goes back to one stream.
+                            Button {
+                                splitEnabled.wrappedValue = false
+                            } label: {
+                                Image(systemName: "rectangle.split.2x1.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(.white)
+                                    .frame(width: 34, height: 34)
+                                    .background(Color.accentColor, in: Circle())
+                            }
+                            .accessibilityLabel("Single Stream")
+                        }
                         pauseButton
                         headerButton("magnifyingglass", label: "Find") { toggleFind() }
                         // The menu titles itself with the tab's name — density and line behavior
@@ -822,15 +903,25 @@ internal struct LogsPane: View {
                 }
             }
             // Root titled by tab: the back item carries the host name, freeing the title slot.
+            // The right half names the tab it shows; "Logs" twice said nothing about either side.
             VStack(alignment: .leading, spacing: 5) {
-                Text(role == .secondary ? "OTHER HALF" : "LOGSENSE")
+                Text(role == .secondary ? "RIGHT HALF" : "LOGSENSE")
                     .font(.system(size: 11.5, weight: .semibold))
                     .kerning(1)
                     .foregroundStyle(.secondary)
-                Text("Logs")
-                    .font(.system(size: 34, weight: .bold))
+                if railActions {
+                    // On the rail the live count rides beside the title — one row less above the stream.
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("Logs").font(.system(size: 34, weight: .bold))
+                        statusRow(rows: rows)
+                    }
+                } else {
+                    Text(role == .secondary ? activeTabName : "Logs")
+                        .font(.system(size: 34, weight: .bold))
+                        .lineLimit(1)
+                }
             }
-            statusRow(rows: rows)
+            if !railActions { statusRow(rows: rows) }
         }
         .padding(.horizontal, 16)
         .padding(.top, 8)
@@ -938,7 +1029,7 @@ internal struct LogsPane: View {
         .padding(.horizontal, 16)
         .padding(.top, 9)
         .padding(.bottom, 8)
-        .overlay(alignment: .bottom) { Divider() }
+        .overlay(alignment: .bottom) { if !wideOpen { hairline } }
     }
 
     // MARK: banners & states

@@ -86,9 +86,13 @@ private struct DuoPostureReader: ViewModifier {
 internal struct FoldSplit<First: View, Second: View>: View {
     let first: First
     let second: Second
+    /// The hairline down the crease — the seam between two panes; a single bar spanning the fold
+    /// doesn't want one.
+    var showsCrease = true
     @Environment(\.duoPosture) private var duo
 
-    init(@ViewBuilder first: () -> First, @ViewBuilder second: () -> Second) {
+    init(showsCrease: Bool = true, @ViewBuilder first: () -> First, @ViewBuilder second: () -> Second) {
+        self.showsCrease = showsCrease
         self.first = first()
         self.second = second()
     }
@@ -121,11 +125,13 @@ internal struct FoldSplit<First: View, Second: View>: View {
 
     private func crease(vertical: Bool) -> some View {
         ZStack {
-            Color(.systemBackground)
-            if vertical {
-                Rectangle().fill(Color(.separator)).frame(width: 0.5)
-            } else {
-                Rectangle().fill(Color(.separator)).frame(height: 0.5)
+            Color.clear
+            if showsCrease {
+                if vertical {
+                    Rectangle().fill(Color(.separator)).frame(width: 0.5)
+                } else {
+                    Rectangle().fill(Color(.separator)).frame(height: 0.5)
+                }
             }
         }
         .accessibilityHidden(true)
